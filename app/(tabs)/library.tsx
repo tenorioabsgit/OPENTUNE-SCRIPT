@@ -11,6 +11,7 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -287,20 +288,27 @@ export default function LibraryScreen() {
         <TouchableOpacity
           style={styles.logoutButton}
           onPress={() => {
-            Alert.alert(
-              t('profile.logout'),
-              language === 'pt' ? 'Deseja sair da sua conta?' : 'Do you want to sign out?',
-              [
-                { text: t('upload.cancel'), style: 'cancel' },
-                {
-                  text: t('profile.logout'),
-                  style: 'destructive',
-                  onPress: async () => {
-                    await signOut();
+            const msg = language === 'pt' ? 'Deseja sair da sua conta?' : 'Do you want to sign out?';
+            if (Platform.OS === 'web') {
+              if (window.confirm(msg)) {
+                signOut();
+              }
+            } else {
+              Alert.alert(
+                t('profile.logout'),
+                msg,
+                [
+                  { text: t('upload.cancel'), style: 'cancel' },
+                  {
+                    text: t('profile.logout'),
+                    style: 'destructive',
+                    onPress: async () => {
+                      await signOut();
+                    },
                   },
-                },
-              ]
-            );
+                ]
+              );
+            }
           }}
         >
           <Ionicons name="log-out-outline" size={20} color={Colors.textSecondary} />
