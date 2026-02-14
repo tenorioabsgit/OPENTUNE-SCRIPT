@@ -6,9 +6,11 @@ import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
 import MiniPlayer from '../../src/components/MiniPlayer';
 import { usePlayer } from '../../src/contexts/PlayerContext';
+import { useLanguage } from '../../src/contexts/LanguageContext';
 
 export default function TabLayout() {
   const { currentTrack } = usePlayer();
+  const { t } = useLanguage();
 
   return (
     <View style={styles.container}>
@@ -33,7 +35,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'Início',
+            title: t('tab.home'),
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="home" size={size} color={color} />
             ),
@@ -42,7 +44,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="search"
           options={{
-            title: 'Buscar',
+            title: t('tab.search'),
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="search" size={size} color={color} />
             ),
@@ -51,7 +53,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="library"
           options={{
-            title: 'Biblioteca',
+            title: t('tab.library'),
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="library" size={size} color={color} />
             ),

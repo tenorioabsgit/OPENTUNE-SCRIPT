@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../src/contexts/AuthContext';
+import { useLanguage } from '../../src/contexts/LanguageContext';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
 
@@ -25,6 +26,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { signIn, signInWithGoogle } = useAuth();
+  const { t } = useLanguage();
   const router = useRouter();
 
   async function handleLogin() {
@@ -73,8 +75,8 @@ export default function LoginScreen() {
           </View>
 
           {/* Title */}
-          <Text style={styles.title}>Entrar no Spotfly</Text>
-          <Text style={styles.subtitle}>Share, Build, Share</Text>
+          <Text style={styles.title}>{t('auth.login')} Spotfly</Text>
+          <Text style={styles.subtitle}>{t('auth.slogan')}</Text>
 
           {/* Google Sign In */}
           <TouchableOpacity
@@ -83,7 +85,7 @@ export default function LoginScreen() {
             disabled={isLoading}
           >
             <Ionicons name="logo-google" size={20} color={Colors.textPrimary} />
-            <Text style={styles.googleButtonText}>Continuar com Google</Text>
+            <Text style={styles.googleButtonText}>{t('auth.loginWithGoogle')}</Text>
           </TouchableOpacity>
 
           {/* Divider */}
@@ -95,7 +97,7 @@ export default function LoginScreen() {
 
           {/* Email Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>E-mail</Text>
+            <Text style={styles.inputLabel}>{t('auth.email')}</Text>
             <TextInput
               style={styles.input}
               value={email}
@@ -110,7 +112,7 @@ export default function LoginScreen() {
 
           {/* Password Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Senha</Text>
+            <Text style={styles.inputLabel}>{t('auth.password')}</Text>
             <View style={styles.passwordContainer}>
               <TextInput
                 style={[styles.input, styles.passwordInput]}
@@ -142,15 +144,15 @@ export default function LoginScreen() {
             {isLoading ? (
               <ActivityIndicator color={Colors.background} />
             ) : (
-              <Text style={styles.loginButtonText}>Entrar</Text>
+              <Text style={styles.loginButtonText}>{t('auth.login')}</Text>
             )}
           </TouchableOpacity>
 
           {/* Sign Up Link */}
           <View style={styles.signUpContainer}>
-            <Text style={styles.signUpText}>Não tem uma conta? </Text>
+            <Text style={styles.signUpText}>{t('auth.noAccount')} </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
-              <Text style={styles.signUpLink}>Cadastre-se</Text>
+              <Text style={styles.signUpLink}>{t('auth.register')}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>

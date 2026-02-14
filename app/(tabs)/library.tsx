@@ -24,6 +24,7 @@ import {
   createPlaylist as firestoreCreatePlaylist,
 } from '../../src/services/firestore';
 import { useAuth } from '../../src/contexts/AuthContext';
+import { useLanguage } from '../../src/contexts/LanguageContext';
 
 type FilterType = 'all' | 'playlists' | 'downloaded';
 type SortType = 'recent' | 'alphabetical' | 'creator';
@@ -31,6 +32,7 @@ type ViewType = 'list' | 'grid';
 
 export default function LibraryScreen() {
   const { user, signOut } = useAuth();
+  const { t, language, setLanguage } = useLanguage();
   const router = useRouter();
   const [playlists, setPlaylists] = useState<Playlist[]>(defaultPlaylists);
   const [filter, setFilter] = useState<FilterType>('all');
@@ -171,7 +173,7 @@ export default function LibraryScreen() {
             source={{ uri: user?.photoUrl || 'https://i.pravatar.cc/40' }}
             style={styles.avatar}
           />
-          <Text style={styles.headerTitle}>Sua Biblioteca</Text>
+          <Text style={styles.headerTitle}>{t('library.title')}</Text>
         </TouchableOpacity>
         <View style={styles.headerIcons}>
           <TouchableOpacity
@@ -260,7 +262,7 @@ export default function LibraryScreen() {
                 <Ionicons name="heart" size={24} color={Colors.textPrimary} />
               </View>
               <View style={styles.listInfo}>
-                <Text style={styles.listTitle}>Músicas Curtidas</Text>
+                <Text style={styles.listTitle}>{t('library.liked')}</Text>
                 <View style={styles.listMeta}>
                   <Ionicons name="pin" size={12} color={Colors.primary} />
                   <Text style={styles.listType}> Playlist · Spotfly</Text>
@@ -274,24 +276,36 @@ export default function LibraryScreen() {
         />
       )}
 
-      {/* Logout button */}
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={() => {
-          Alert.alert('Sair', 'Deseja sair da sua conta?', [
-            { text: 'Cancelar', style: 'cancel' },
-            {
-              text: 'Sair',
-              style: 'destructive',
-              onPress: async () => {
-                await signOut();
-              },
-            },
-          ]);
-        }}
-      >
-        <Ionicons name="log-out-outline" size={20} color={Colors.textSecondary} />
-      </TouchableOpacity>
+      {/* Language toggle + Logout */}
+      <View style={styles.topRightActions}>
+        <TouchableOpacity
+          style={styles.langToggle}
+          onPress={() => setLanguage(language === 'pt' ? 'en' : 'pt')}
+        >
+          <Text style={styles.langToggleText}>{language === 'pt' ? 'EN' : 'PT'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={() => {
+            Alert.alert(
+              t('profile.logout'),
+              language === 'pt' ? 'Deseja sair da sua conta?' : 'Do you want to sign out?',
+              [
+                { text: t('upload.cancel'), style: 'cancel' },
+                {
+                  text: t('profile.logout'),
+                  style: 'destructive',
+                  onPress: async () => {
+                    await signOut();
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Ionicons name="log-out-outline" size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
 
       {/* Create Playlist Modal */}
       <Modal
@@ -508,10 +522,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoutButton: {
+  topRightActions: {
     position: 'absolute',
     top: 20,
     right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  langToggle: {
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: Layout.borderRadius.round,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  langToggleText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  logoutButton: {
     padding: 8,
   },
   modalOverlay: {

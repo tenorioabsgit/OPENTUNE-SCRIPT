@@ -17,6 +17,7 @@ import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { usePlayer } from '../../src/contexts/PlayerContext';
+import { useLanguage } from '../../src/contexts/LanguageContext';
 import { Track } from '../../src/types';
 import { getAllCopyleftTracks } from '../../src/services/firestore';
 import {
@@ -35,6 +36,7 @@ type FilterType = 'all' | 'music' | 'playlists';
 export default function HomeScreen() {
   const { user } = useAuth();
   const { playTrack } = usePlayer();
+  const { t } = useLanguage();
   const router = useRouter();
   const [filter, setFilter] = useState<FilterType>('all');
   const [communityTracks, setCommunityTracks] = useState<Track[]>([]);
@@ -59,9 +61,9 @@ export default function HomeScreen() {
 
   function getGreeting(): string {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Bom dia';
-    if (hour < 18) return 'Boa tarde';
-    return 'Boa noite';
+    if (hour < 12) return t('home.goodMorning');
+    if (hour < 18) return t('home.goodAfternoon');
+    return t('home.goodEvening');
   }
 
   const recentItems = defaultPlaylists.slice(0, 6);
@@ -116,7 +118,7 @@ export default function HomeScreen() {
                     filter === f && styles.filterChipTextActive,
                   ]}
                 >
-                  {f === 'all' ? 'Tudo' : f === 'music' ? 'Músicas' : 'Playlists'}
+                  {f === 'all' ? t('home.all') : f === 'music' ? t('home.music') : t('home.playlists')}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -139,7 +141,7 @@ export default function HomeScreen() {
           {/* Made For You */}
           {filter !== 'music' && (
             <>
-              <SectionHeader title="Feito para Você" />
+              <SectionHeader title={t('home.madeForYou')} />
               <FlatList
                 data={madeForYou}
                 horizontal
@@ -156,7 +158,7 @@ export default function HomeScreen() {
           {/* Community Tracks */}
           {filter !== 'playlists' && communityTracks.length > 0 && (
             <>
-              <SectionHeader title="Comunidade Copyleft" />
+              <SectionHeader title={t('home.communityCopyleft')} />
               <View style={styles.trackSection}>
                 {communityTracks.slice(0, 5).map((track, index) => (
                   <TrackRow
@@ -173,7 +175,7 @@ export default function HomeScreen() {
           {/* Trending */}
           {filter !== 'playlists' && (
             <>
-              <SectionHeader title="Em Alta" />
+              <SectionHeader title={t('home.trending')} />
               {isLoadingTracks ? (
                 <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 20 }} />
               ) : (
@@ -194,7 +196,7 @@ export default function HomeScreen() {
           {/* New Releases */}
           {filter !== 'playlists' && (
             <>
-              <SectionHeader title="Lançamentos" />
+              <SectionHeader title={t('home.newReleases')} />
               <FlatList
                 data={newReleases}
                 horizontal
@@ -222,7 +224,7 @@ export default function HomeScreen() {
           {/* Popular Artists */}
           {filter !== 'playlists' && (
             <>
-              <SectionHeader title="Artistas Populares" />
+              <SectionHeader title={t('home.popularArtists')} />
               <FlatList
                 data={artists.slice(0, 6)}
                 horizontal
@@ -238,7 +240,7 @@ export default function HomeScreen() {
                     <Text style={styles.artistName} numberOfLines={1}>
                       {item.name}
                     </Text>
-                    <Text style={styles.artistLabel}>Artista</Text>
+                    <Text style={styles.artistLabel}>{t('home.artist')}</Text>
                   </TouchableOpacity>
                 )}
               />
@@ -254,18 +256,15 @@ export default function HomeScreen() {
               style={styles.bannerGradient}
             >
               <View style={styles.bannerContent}>
-                <Text style={styles.bannerSlogan}>Share, Build, Share</Text>
-                <Text style={styles.bannerTitle}>Plataforma 100% Copyleft</Text>
-                <Text style={styles.bannerSubtitle}>
-                  Todas as músicas aqui são livres. Ouça, compartilhe, remixe e crie sem restrições.
-                  Copyleft significa liberdade: o direito de usar, modificar e redistribuir arte para todos.
-                </Text>
+                <Text style={styles.bannerSlogan}>{t('home.bannerSlogan')}</Text>
+                <Text style={styles.bannerTitle}>{t('home.bannerTitle')}</Text>
+                <Text style={styles.bannerSubtitle}>{t('home.bannerSubtitle')}</Text>
                 <TouchableOpacity
                   style={styles.bannerButton}
                   onPress={() => router.push('/upload')}
                 >
                   <Ionicons name="cloud-upload" size={18} color={Colors.primary} />
-                  <Text style={styles.bannerButtonText}>Contribua com sua música</Text>
+                  <Text style={styles.bannerButtonText}>{t('home.bannerButton')}</Text>
                 </TouchableOpacity>
               </View>
             </LinearGradient>

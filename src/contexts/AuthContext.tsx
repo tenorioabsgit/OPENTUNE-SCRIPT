@@ -9,7 +9,6 @@ import {
   signInWithCredential,
   User as FirebaseUser,
 } from 'firebase/auth';
-import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { auth } from '../services/firebase';
 import { createUserProfile, getUserProfile } from '../services/firestore';
@@ -18,11 +17,13 @@ import { User } from '../types';
 WebBrowser.maybeCompleteAuthSession();
 
 // ============================================================
-// Google OAuth Client IDs
+// Google OAuth Configuration
 // ============================================================
 const GOOGLE_WEB_CLIENT_ID = '215760117220-ao69jilb4mkp6ehu1dtdqb10tuvgiqs7.apps.googleusercontent.com';
-// Expo auth proxy provides HTTPS redirect URI required by Google OAuth Web client
-const EXPO_REDIRECT_URI = 'https://auth.expo.io/@tenorioabs/spotfly';
+// Our own HTTPS redirect page hosted on Vercel - extracts tokens and redirects to app scheme
+const GOOGLE_REDIRECT_URI = 'https://spotfly-nine.vercel.app/auth/callback.html';
+// The app deep link that the redirect page will navigate to
+const APP_RETURN_URI = 'spotfly://auth';
 
 interface AuthContextType {
   user: User | null;
@@ -44,11 +45,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  const [_request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: GOOGLE_WEB_CLIENT_ID,
-    redirectUri: EXPO_REDIRECT_URI,
-  });
 
   // Listen to Firebase auth state
   useEffect(() => {
@@ -75,17 +71,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return unsubscribe;
   }, []);
-
-  // Handle Google sign-in response
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      const credential = GoogleAuthProvider.credential(id_token);
-      signInWithCredential(auth, credential).catch((e) => {
-        console.error('Google credential error:', e);
-      });
-    }
-  }, [response]);
 
   async function signIn(
     email: string,
@@ -135,14 +120,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signInWithGoogleAuth(): Promise<{ success: boolean; error?: string }> {
     try {
-      const result = await promptAsync();
-      if (result?.type === 'error') {
-        return { success: false, error: result.error?.message || 'Erro ao conectar com Google.' };
+      const state = Math.random().toString(36).substring(2, 15);
+      const nonce = Math.random().toString(36).substring(2, 15);
+
+      const params = new URLSearchParams({
+        client_id: GOOGLE_WEB_CLIENT_ID,
+        redirect_uri: GOOGLE_REDIRECT_URI,
+        response_type: 'id_token',
+        scope: 'openid email profile',
+        state,
+        nonce,
+      });
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, APP_RETURN_URI);
+
+      if (result.type === 'success' && result.url) {
+        const urlObj = new URL(result.url);
+        const idToken = urlObj.searchParams.get('id_token');
+
+        if (idToken) {
+          const credential = GoogleAuthProvider.credential(idToken);
+          await signInWithCredential(auth, credential);
+          return { success: true };
+        }
+        return { success: false, error: 'Token não recebido do Google.' };
       }
-      if (result?.type === 'dismiss' || result?.type === 'cancel') {
+
+      if (result.type === 'dismiss' || result.type === 'cancel') {
         return { success: false, error: 'Login com Google cancelado.' };
       }
-      return { success: true };
+
+      return { success: false, error: 'Erro ao conectar com Google.' };
     } catch (e: any) {
       console.error('Google auth error:', e);
       return { success: false, error: 'Erro ao conectar com Google. Tente novamente.' };
