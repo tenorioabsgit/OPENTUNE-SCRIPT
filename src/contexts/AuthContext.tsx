@@ -1,14 +1,36 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithCredential,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import { auth } from '../services/firebase';
+import { createUserProfile, getUserProfile } from '../services/firestore';
 import { User } from '../types';
-import { saveData, loadData, removeData, KEYS } from '../services/storage';
-import * as Crypto from 'expo-crypto';
+
+WebBrowser.maybeCompleteAuthSession();
+
+// ============================================================
+// Google OAuth Client IDs
+// Configurar em: Google Cloud Console -> APIs & Services -> Credentials
+// ============================================================
+const GOOGLE_WEB_CLIENT_ID = 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
+const GOOGLE_ANDROID_CLIENT_ID = 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com';
 
 interface AuthContextType {
   user: User | null;
+  firebaseUser: FirebaseUser | null;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<boolean>;
-  signUp: (email: string, password: string, displayName: string) => Promise<boolean>;
-  signInWithGoogle: () => Promise<boolean>;
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signUp: (email: string, password: string, displayName: string) => Promise<{ success: boolean; error?: string }>;
+  signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -20,94 +42,126 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [_request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+  });
+
+  // Listen to Firebase auth state
   useEffect(() => {
-    loadStoredUser();
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        setFirebaseUser(fbUser);
+        let profile = await getUserProfile(fbUser.uid);
+        if (!profile) {
+          profile = {
+            id: fbUser.uid,
+            email: fbUser.email || '',
+            displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'Usuário',
+            photoUrl: fbUser.photoURL || `https://i.pravatar.cc/150?u=${fbUser.uid}`,
+            createdAt: Date.now(),
+          };
+          await createUserProfile(profile);
+        }
+        setUser(profile);
+      } else {
+        setFirebaseUser(null);
+        setUser(null);
+      }
+      setIsLoading(false);
+    });
+    return unsubscribe;
   }, []);
 
-  async function loadStoredUser() {
+  // Handle Google sign-in response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      signInWithCredential(auth, credential).catch((e) => {
+        console.error('Google credential error:', e);
+      });
+    }
+  }, [response]);
+
+  async function signIn(
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      const stored = await loadData<User>(KEYS.USER);
-      if (stored) {
-        setUser(stored);
-      }
-    } finally {
-      setIsLoading(false);
+      await signInWithEmailAndPassword(auth, email, password);
+      return { success: true };
+    } catch (e: any) {
+      const code = e.code;
+      let error = 'Erro ao fazer login. Tente novamente.';
+      if (code === 'auth/user-not-found') error = 'Usuário não encontrado.';
+      else if (code === 'auth/wrong-password') error = 'Senha incorreta.';
+      else if (code === 'auth/invalid-email') error = 'E-mail inválido.';
+      else if (code === 'auth/too-many-requests') error = 'Muitas tentativas. Tente mais tarde.';
+      else if (code === 'auth/invalid-credential') error = 'E-mail ou senha incorretos.';
+      return { success: false, error };
     }
   }
 
-  async function signIn(email: string, password: string): Promise<boolean> {
+  async function signUp(
+    email: string,
+    password: string,
+    displayName: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Local authentication - stores user data locally
-      const id = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        email + password
-      );
-      const newUser: User = {
-        id: id.slice(0, 16),
-        email,
-        displayName: email.split('@')[0],
-        photoUrl: `https://i.pravatar.cc/150?u=${email}`,
-        createdAt: Date.now(),
-      };
-      await saveData(KEYS.USER, newUser);
-      setUser(newUser);
-      return true;
-    } catch (e) {
-      console.error('Sign in error:', e);
-      return false;
-    }
-  }
-
-  async function signUp(email: string, password: string, displayName: string): Promise<boolean> {
-    try {
-      const id = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        email + Date.now().toString()
-      );
-      const newUser: User = {
-        id: id.slice(0, 16),
-        email,
+      const { user: fbUser } = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(fbUser, { displayName });
+      const profile: User = {
+        id: fbUser.uid,
+        email: fbUser.email || email,
         displayName,
-        photoUrl: `https://i.pravatar.cc/150?u=${email}`,
+        photoUrl: `https://i.pravatar.cc/150?u=${fbUser.uid}`,
         createdAt: Date.now(),
       };
-      await saveData(KEYS.USER, newUser);
-      setUser(newUser);
-      return true;
-    } catch (e) {
-      console.error('Sign up error:', e);
-      return false;
+      await createUserProfile(profile);
+      return { success: true };
+    } catch (e: any) {
+      const code = e.code;
+      let error = 'Erro ao criar conta. Tente novamente.';
+      if (code === 'auth/email-already-in-use') error = 'Este e-mail já está cadastrado.';
+      else if (code === 'auth/weak-password') error = 'Senha fraca. Use pelo menos 6 caracteres.';
+      else if (code === 'auth/invalid-email') error = 'E-mail inválido.';
+      return { success: false, error };
     }
   }
 
-  async function signInWithGoogle(): Promise<boolean> {
+  async function signInWithGoogleAuth(): Promise<{ success: boolean; error?: string }> {
     try {
-      // Simulated Google sign-in for demo
-      const newUser: User = {
-        id: 'google-' + Date.now().toString(36),
-        email: 'user@gmail.com',
-        displayName: 'Usuário Google',
-        photoUrl: 'https://i.pravatar.cc/150?u=google',
-        createdAt: Date.now(),
-      };
-      await saveData(KEYS.USER, newUser);
-      setUser(newUser);
-      return true;
-    } catch (e) {
-      console.error('Google sign in error:', e);
-      return false;
+      await promptAsync();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: 'Erro ao conectar com Google.' };
     }
   }
 
   async function signOut(): Promise<void> {
-    await removeData(KEYS.USER);
-    setUser(null);
+    try {
+      await firebaseSignOut(auth);
+    } catch (e) {
+      console.error('Sign out error:', e);
+    }
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signUp, signInWithGoogle, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        firebaseUser,
+        isLoading,
+        signIn,
+        signUp,
+        signInWithGoogle: signInWithGoogleAuth,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

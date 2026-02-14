@@ -43,21 +43,20 @@ export default function RegisterScreen() {
       return;
     }
     setIsLoading(true);
-    const success = await signUp(email, password, displayName);
+    const result = await signUp(email, password, displayName);
     setIsLoading(false);
-    if (success) {
-      router.replace('/(tabs)');
-    } else {
-      Alert.alert('Erro', 'Falha ao criar conta. Tente novamente.');
+    if (!result.success) {
+      Alert.alert('Erro', result.error || 'Falha ao criar conta.');
     }
+    // Navigation handled by AuthContext via onAuthStateChanged
   }
 
   async function handleGoogleSignUp() {
     setIsLoading(true);
-    const success = await signInWithGoogle();
+    const result = await signInWithGoogle();
     setIsLoading(false);
-    if (success) {
-      router.replace('/(tabs)');
+    if (!result.success) {
+      Alert.alert('Erro', result.error || 'Falha ao conectar com Google.');
     }
   }
 

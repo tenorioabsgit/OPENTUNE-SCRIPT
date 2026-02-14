@@ -9,7 +9,7 @@ import {
   SafeAreaView,
   TextInput,
   Modal,
-  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +18,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../src/constants/Colors';
 import { Layout } from '../src/constants/Layout';
 import { Track } from '../src/types';
-import { saveData, loadData, KEYS } from '../src/services/storage';
+import { uploadMusicFile, UploadProgress } from '../src/services/cloudStorage';
+import { saveTrackMetadata, getUserTracks, deleteTrackMetadata } from '../src/services/firestore';
 import { usePlayer } from '../src/contexts/PlayerContext';
 import { useAuth } from '../src/contexts/AuthContext';
 import TrackRow from '../src/components/TrackRow';
@@ -32,15 +33,26 @@ export default function UploadScreen() {
   const [editTrack, setEditTrack] = useState<Partial<Track>>({});
   const [pendingUri, setPendingUri] = useState('');
   const [pendingName, setPendingName] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isLoadingTracks, setIsLoadingTracks] = useState(true);
 
   useEffect(() => {
     loadUploadedTracks();
-  }, []);
+  }, [user]);
 
   async function loadUploadedTracks() {
-    const tracks = await loadData<Track[]>(KEYS.UPLOADED_TRACKS);
-    if (tracks) {
+    if (!user) {
+      setIsLoadingTracks(false);
+      return;
+    }
+    try {
+      const tracks = await getUserTracks(user.id);
       setUploadedTracks(tracks);
+    } catch (e) {
+      console.error('Error loading tracks:', e);
+    } finally {
+      setIsLoadingTracks(false);
     }
   }
 
@@ -77,31 +89,60 @@ export default function UploadScreen() {
       Alert.alert('Erro', 'Digite um título para a música');
       return;
     }
+    if (!user) return;
 
-    const newTrack: Track = {
-      id: 'upload-' + Date.now(),
-      title: editTrack.title?.trim() || pendingName,
-      artist: editTrack.artist?.trim() || 'Artista Desconhecido',
-      album: editTrack.album?.trim() || 'Meus Uploads',
-      duration: 0,
-      artwork: `https://picsum.photos/seed/upload${Date.now()}/300/300`,
-      audioUrl: pendingUri,
-      isLocal: true,
-      genre: editTrack.genre || 'Outro',
-      license: 'Upload pessoal',
-      addedAt: Date.now(),
-    };
+    setIsUploading(true);
+    setUploadProgress(0);
 
-    const updated = [...uploadedTracks, newTrack];
-    setUploadedTracks(updated);
-    await saveData(KEYS.UPLOADED_TRACKS, updated);
+    try {
+      // Upload file to Firebase Storage
+      const audioUrl = await uploadMusicFile(
+        user.id,
+        pendingUri,
+        pendingName,
+        (progress: UploadProgress) => {
+          setUploadProgress(Math.round(progress.progress * 100));
+        }
+      );
 
-    setShowEditModal(false);
-    setPendingUri('');
-    setPendingName('');
-    setEditTrack({});
+      const trackId = 'upload-' + Date.now();
+      const newTrack: Track = {
+        id: trackId,
+        title: editTrack.title?.trim() || pendingName,
+        artist: editTrack.artist?.trim() || 'Artista Desconhecido',
+        album: editTrack.album?.trim() || 'Meus Uploads',
+        duration: 0,
+        artwork: `https://picsum.photos/seed/${trackId}/300/300`,
+        audioUrl,
+        isLocal: false,
+        genre: editTrack.genre || 'Outro',
+        license: 'Upload pessoal',
+        addedAt: Date.now(),
+      };
 
-    Alert.alert('Sucesso', `"${newTrack.title}" foi adicionada à sua biblioteca!`);
+      // Save metadata to Firestore
+      await saveTrackMetadata({
+        ...newTrack,
+        // @ts-ignore - extra field for Firestore query
+        uploadedBy: user.id,
+        titleLower: newTrack.title.toLowerCase(),
+      } as any);
+
+      setUploadedTracks(prev => [newTrack, ...prev]);
+
+      setShowEditModal(false);
+      setPendingUri('');
+      setPendingName('');
+      setEditTrack({});
+
+      Alert.alert('Sucesso', `"${newTrack.title}" foi enviada com sucesso!`);
+    } catch (e) {
+      console.error('Upload error:', e);
+      Alert.alert('Erro', 'Não foi possível enviar o arquivo. Tente novamente.');
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   }
 
   async function deleteTrack(track: Track) {
@@ -114,9 +155,13 @@ export default function UploadScreen() {
           text: 'Remover',
           style: 'destructive',
           onPress: async () => {
-            const updated = uploadedTracks.filter(t => t.id !== track.id);
-            setUploadedTracks(updated);
-            await saveData(KEYS.UPLOADED_TRACKS, updated);
+            try {
+              await deleteTrackMetadata(track.id);
+              setUploadedTracks(prev => prev.filter(t => t.id !== track.id));
+            } catch (e) {
+              console.error('Delete error:', e);
+              Alert.alert('Erro', 'Não foi possível remover a música.');
+            }
           },
         },
       ]
@@ -135,16 +180,33 @@ export default function UploadScreen() {
       </View>
 
       {/* Upload button area */}
-      <TouchableOpacity style={styles.uploadArea} onPress={pickFile} activeOpacity={0.8}>
+      <TouchableOpacity
+        style={styles.uploadArea}
+        onPress={pickFile}
+        activeOpacity={0.8}
+        disabled={isUploading}
+      >
         <LinearGradient
           colors={[Colors.primary, Colors.primaryDark]}
           style={styles.uploadGradient}
         >
-          <Ionicons name="cloud-upload" size={40} color={Colors.textPrimary} />
-          <Text style={styles.uploadTitle}>Fazer Upload</Text>
-          <Text style={styles.uploadSubtitle}>
-            MP3, WAV, FLAC, OGG, AAC, M4A
-          </Text>
+          {isUploading ? (
+            <>
+              <ActivityIndicator size="large" color={Colors.textPrimary} />
+              <Text style={styles.uploadTitle}>Enviando... {uploadProgress}%</Text>
+              <View style={styles.progressBarContainer}>
+                <View style={[styles.progressBar, { width: `${uploadProgress}%` }]} />
+              </View>
+            </>
+          ) : (
+            <>
+              <Ionicons name="cloud-upload" size={40} color={Colors.textPrimary} />
+              <Text style={styles.uploadTitle}>Fazer Upload</Text>
+              <Text style={styles.uploadSubtitle}>
+                MP3, WAV, FLAC, OGG, AAC, M4A
+              </Text>
+            </>
+          )}
         </LinearGradient>
       </TouchableOpacity>
 
@@ -155,12 +217,14 @@ export default function UploadScreen() {
         </Text>
       </View>
 
-      {uploadedTracks.length === 0 ? (
+      {isLoadingTracks ? (
+        <View style={styles.emptyState}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : uploadedTracks.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="musical-notes" size={48} color={Colors.textInactive} />
-          <Text style={styles.emptyText}>
-            Nenhuma música enviada ainda
-          </Text>
+          <Text style={styles.emptyText}>Nenhuma música enviada ainda</Text>
           <Text style={styles.emptySubtext}>
             Faça upload das suas músicas para ouvir no Spotfly
           </Text>
@@ -186,7 +250,7 @@ export default function UploadScreen() {
         visible={showEditModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowEditModal(false)}
+        onRequestClose={() => !isUploading && setShowEditModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -199,6 +263,7 @@ export default function UploadScreen() {
               placeholder="Título"
               placeholderTextColor={Colors.textInactive}
               autoFocus
+              editable={!isUploading}
             />
 
             <TextInput
@@ -207,6 +272,7 @@ export default function UploadScreen() {
               onChangeText={(text) => setEditTrack({ ...editTrack, artist: text })}
               placeholder="Artista"
               placeholderTextColor={Colors.textInactive}
+              editable={!isUploading}
             />
 
             <TextInput
@@ -215,6 +281,7 @@ export default function UploadScreen() {
               onChangeText={(text) => setEditTrack({ ...editTrack, album: text })}
               placeholder="Álbum"
               placeholderTextColor={Colors.textInactive}
+              editable={!isUploading}
             />
 
             <TextInput
@@ -223,25 +290,35 @@ export default function UploadScreen() {
               onChangeText={(text) => setEditTrack({ ...editTrack, genre: text })}
               placeholder="Gênero"
               placeholderTextColor={Colors.textInactive}
+              editable={!isUploading}
             />
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.modalCancelButton}
                 onPress={() => {
+                  if (isUploading) return;
                   setShowEditModal(false);
                   setPendingUri('');
                   setEditTrack({});
                 }}
+                disabled={isUploading}
               >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
+                <Text style={[styles.modalCancelText, isUploading && { opacity: 0.5 }]}>
+                  Cancelar
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalSaveButton}
+                style={[styles.modalSaveButton, isUploading && { opacity: 0.7 }]}
                 onPress={saveUploadedTrack}
+                disabled={isUploading}
               >
-                <Text style={styles.modalSaveText}>Salvar</Text>
+                {isUploading ? (
+                  <ActivityIndicator color={Colors.background} size="small" />
+                ) : (
+                  <Text style={styles.modalSaveText}>Enviar</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -292,6 +369,19 @@ const styles = StyleSheet.create({
     opacity: 0.8,
     marginTop: 4,
   },
+  progressBarContainer: {
+    width: '80%',
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 2,
+    marginTop: Layout.padding.sm,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: Colors.textPrimary,
+    borderRadius: 2,
+  },
   trackListHeader: {
     paddingHorizontal: Layout.padding.md,
     paddingTop: Layout.padding.xl,
@@ -324,7 +414,6 @@ const styles = StyleSheet.create({
   trackList: {
     paddingBottom: Layout.padding.xl,
   },
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: Colors.overlay,

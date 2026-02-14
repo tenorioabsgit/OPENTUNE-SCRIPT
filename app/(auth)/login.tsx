@@ -33,21 +33,20 @@ export default function LoginScreen() {
       return;
     }
     setIsLoading(true);
-    const success = await signIn(email, password);
+    const result = await signIn(email, password);
     setIsLoading(false);
-    if (success) {
-      router.replace('/(tabs)');
-    } else {
-      Alert.alert('Erro', 'Falha ao fazer login. Tente novamente.');
+    if (!result.success) {
+      Alert.alert('Erro', result.error || 'Falha ao fazer login.');
     }
+    // Navigation is handled by AuthContext via onAuthStateChanged
   }
 
   async function handleGoogleLogin() {
     setIsLoading(true);
-    const success = await signInWithGoogle();
+    const result = await signInWithGoogle();
     setIsLoading(false);
-    if (success) {
-      router.replace('/(tabs)');
+    if (!result.success) {
+      Alert.alert('Erro', result.error || 'Falha ao conectar com Google.');
     }
   }
 

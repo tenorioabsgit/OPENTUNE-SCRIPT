@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,17 +10,22 @@ import {
   Alert,
   TextInput,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
-import { Playlist, Track } from '../../src/types';
+import { Playlist } from '../../src/types';
 import { defaultPlaylists } from '../../src/data/mockData';
-import { saveData, loadData, KEYS } from '../../src/services/storage';
+import {
+  getUserPlaylists,
+  getPublicPlaylists,
+  createPlaylist as firestoreCreatePlaylist,
+} from '../../src/services/firestore';
 import { useAuth } from '../../src/contexts/AuthContext';
 
-type FilterType = 'all' | 'playlists' | 'artists' | 'downloaded';
+type FilterType = 'all' | 'playlists' | 'downloaded';
 type SortType = 'recent' | 'alphabetical' | 'creator';
 type ViewType = 'list' | 'grid';
 
@@ -34,48 +39,75 @@ export default function LibraryScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
 
   useEffect(() => {
     loadPlaylists();
-  }, []);
+  }, [user]);
 
   async function loadPlaylists() {
-    const saved = await loadData<Playlist[]>(KEYS.PLAYLISTS);
-    if (saved && saved.length > 0) {
-      setPlaylists([...defaultPlaylists, ...saved]);
+    setIsLoadingPlaylists(true);
+    try {
+      if (user) {
+        const [userPl, publicPl] = await Promise.all([
+          getUserPlaylists(user.id).catch(() => []),
+          getPublicPlaylists(20).catch(() => []),
+        ]);
+        // Merge: user playlists + public (deduped) + defaults as fallback
+        const allIds = new Set(userPl.map(p => p.id));
+        const deduped = publicPl.filter(p => !allIds.has(p.id));
+        setPlaylists([...userPl, ...deduped, ...defaultPlaylists]);
+      } else {
+        setPlaylists(defaultPlaylists);
+      }
+    } catch (e) {
+      console.error('Error loading playlists:', e);
+      setPlaylists(defaultPlaylists);
+    } finally {
+      setIsLoadingPlaylists(false);
     }
   }
 
-  async function createPlaylist() {
+  async function handleCreatePlaylist() {
     if (!newPlaylistName.trim()) {
       Alert.alert('Erro', 'Digite um nome para a playlist');
       return;
     }
-    const newPlaylist: Playlist = {
-      id: 'playlist-user-' + Date.now(),
-      title: newPlaylistName.trim(),
-      description: newPlaylistDesc.trim(),
-      artwork: `https://picsum.photos/seed/${Date.now()}/300/300`,
-      trackIds: [],
-      createdBy: user?.displayName || 'Você',
-      isPublic: true,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+    if (!user) return;
 
-    const userPlaylists = playlists.filter(p => !p.id.startsWith('playlist-') || p.id.startsWith('playlist-user-'));
-    const updatedUserPlaylists = [...userPlaylists, newPlaylist];
-    await saveData(KEYS.PLAYLISTS, updatedUserPlaylists);
-    setPlaylists([...defaultPlaylists, ...updatedUserPlaylists]);
-    setNewPlaylistName('');
-    setNewPlaylistDesc('');
-    setShowCreateModal(false);
+    setIsCreating(true);
+    try {
+      const playlistData = {
+        title: newPlaylistName.trim(),
+        description: newPlaylistDesc.trim(),
+        artwork: `https://picsum.photos/seed/${Date.now()}/300/300`,
+        trackIds: [] as string[],
+        createdBy: user.id,
+        isPublic: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const newId = await firestoreCreatePlaylist(playlistData);
+      const newPlaylist: Playlist = { id: newId, ...playlistData };
+
+      setPlaylists(prev => [newPlaylist, ...prev]);
+      setNewPlaylistName('');
+      setNewPlaylistDesc('');
+      setShowCreateModal(false);
+    } catch (e) {
+      console.error('Error creating playlist:', e);
+      Alert.alert('Erro', 'Não foi possível criar a playlist. Tente novamente.');
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   function getSortedPlaylists(): Playlist[] {
     let filtered = [...playlists];
-    if (filter === 'playlists') {
-      filtered = playlists.filter(p => p.createdBy === user?.displayName || p.createdBy === 'Você');
+    if (filter === 'playlists' && user) {
+      filtered = playlists.filter(p => p.createdBy === user.id);
     }
 
     switch (sortBy) {
@@ -104,7 +136,9 @@ export default function LibraryScreen() {
           <View style={styles.listMeta}>
             <Text style={styles.listType}>Playlist</Text>
             <Text style={styles.listDot}> · </Text>
-            <Text style={styles.listCreator}>{item.createdBy}</Text>
+            <Text style={styles.listCreator}>
+              {item.createdBy === user?.id ? 'Você' : item.createdBy}
+            </Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -193,9 +227,7 @@ export default function LibraryScreen() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() =>
-            setViewType(viewType === 'list' ? 'grid' : 'list')
-          }
+          onPress={() => setViewType(viewType === 'list' ? 'grid' : 'list')}
         >
           <Ionicons
             name={viewType === 'list' ? 'grid' : 'list'}
@@ -206,38 +238,41 @@ export default function LibraryScreen() {
       </View>
 
       {/* Playlist List */}
-      <FlatList
-        key={viewType}
-        data={sortedPlaylists}
-        keyExtractor={(item) => item.id}
-        renderItem={viewType === 'list' ? renderListItem : renderGridItem}
-        numColumns={viewType === 'grid' ? 2 : 1}
-        contentContainerStyle={[
-          styles.listContainer,
-          viewType === 'grid' && styles.gridContainer,
-        ]}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <TouchableOpacity
-            style={styles.likedSongsItem}
-            activeOpacity={0.7}
-          >
-            <View style={styles.likedSongsArtwork}>
-              <Ionicons name="heart" size={24} color={Colors.textPrimary} />
-            </View>
-            <View style={styles.listInfo}>
-              <Text style={styles.listTitle}>Músicas Curtidas</Text>
-              <View style={styles.listMeta}>
-                <Ionicons name="pin" size={12} color={Colors.primary} />
-                <Text style={styles.listType}> Playlist · Spotfly</Text>
+      {isLoadingPlaylists ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          key={viewType}
+          data={sortedPlaylists}
+          keyExtractor={(item) => item.id}
+          renderItem={viewType === 'list' ? renderListItem : renderGridItem}
+          numColumns={viewType === 'grid' ? 2 : 1}
+          contentContainerStyle={[
+            styles.listContainer,
+            viewType === 'grid' && styles.gridContainer,
+          ]}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <TouchableOpacity style={styles.likedSongsItem} activeOpacity={0.7}>
+              <View style={styles.likedSongsArtwork}>
+                <Ionicons name="heart" size={24} color={Colors.textPrimary} />
               </View>
-            </View>
-          </TouchableOpacity>
-        }
-        ListFooterComponent={
-          <View style={{ height: Layout.miniPlayerHeight + 80 }} />
-        }
-      />
+              <View style={styles.listInfo}>
+                <Text style={styles.listTitle}>Músicas Curtidas</Text>
+                <View style={styles.listMeta}>
+                  <Ionicons name="pin" size={12} color={Colors.primary} />
+                  <Text style={styles.listType}> Playlist · Spotfly</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          }
+          ListFooterComponent={
+            <View style={{ height: Layout.miniPlayerHeight + 80 }} />
+          }
+        />
+      )}
 
       {/* Logout button */}
       <TouchableOpacity
@@ -250,7 +285,6 @@ export default function LibraryScreen() {
               style: 'destructive',
               onPress: async () => {
                 await signOut();
-                router.replace('/(auth)/login');
               },
             },
           ]);
@@ -301,10 +335,15 @@ export default function LibraryScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalCreateButton}
-                onPress={createPlaylist}
+                style={[styles.modalCreateButton, isCreating && { opacity: 0.7 }]}
+                onPress={handleCreatePlaylist}
+                disabled={isCreating}
               >
-                <Text style={styles.modalCreateText}>Criar</Text>
+                {isCreating ? (
+                  <ActivityIndicator color={Colors.background} size="small" />
+                ) : (
+                  <Text style={styles.modalCreateText}>Criar</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -389,6 +428,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: Layout.padding.xs,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   listContainer: {
     paddingHorizontal: 0,
   },
@@ -470,7 +514,6 @@ const styles = StyleSheet.create({
     right: 16,
     padding: 8,
   },
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: Colors.overlay,
