@@ -21,15 +21,8 @@ import { useAuth } from '../../src/contexts/AuthContext';
 import { usePlayer } from '../../src/contexts/PlayerContext';
 import { useLanguage } from '../../src/contexts/LanguageContext';
 import { Track } from '../../src/types';
-import { getAllCopyleftTracks } from '../../src/services/firestore';
-import {
-  tracks as mockTracks,
-  defaultPlaylists,
-  artists,
-  albums,
-} from '../../src/data/mockData';
-import PlaylistCard from '../../src/components/PlaylistCard';
-import RecentCard from '../../src/components/RecentCard';
+import { getAllTracks, getPublicPlaylists, getUserPlaylists } from '../../src/services/firestore';
+import { Playlist } from '../../src/types';
 import SectionHeader from '../../src/components/SectionHeader';
 import TrackRow from '../../src/components/TrackRow';
 import LanguageToggle from '../../src/components/LanguageToggle';
@@ -43,6 +36,17 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+interface AlbumCard {
+  name: string;
+  artist: string;
+  artwork: string;
+}
+
+interface ArtistCard {
+  name: string;
+  image: string;
+}
+
 type FilterType = 'all' | 'music' | 'playlists';
 
 export default function HomeScreen() {
@@ -51,23 +55,30 @@ export default function HomeScreen() {
   const { t } = useLanguage();
   const router = useRouter();
   const [filter, setFilter] = useState<FilterType>('all');
-  const [communityTracks, setCommunityTracks] = useState<Track[]>([]);
-  const [isLoadingTracks, setIsLoadingTracks] = useState(true);
+  const [allTrks, setAllTrks] = useState<Track[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const greeting = getGreeting();
 
   useEffect(() => {
-    loadCommunityTracks();
-  }, []);
+    loadData();
+  }, [user]);
 
-  async function loadCommunityTracks() {
+  async function loadData() {
     try {
-      const tracks = await getAllCopyleftTracks(20);
-      setCommunityTracks(tracks);
+      const [tracks, pubPl, userPl] = await Promise.all([
+        getAllTracks(100),
+        getPublicPlaylists(10).catch(() => []),
+        user ? getUserPlaylists(user.id).catch(() => []) : Promise.resolve([]),
+      ]);
+      setAllTrks(tracks);
+      const ids = new Set(userPl.map(p => p.id));
+      setPlaylists([...userPl, ...pubPl.filter(p => !ids.has(p.id))]);
     } catch (e) {
-      console.error('Error loading community tracks:', e);
+      console.error('Error loading home data:', e);
     } finally {
-      setIsLoadingTracks(false);
+      setIsLoading(false);
     }
   }
 
@@ -78,11 +89,27 @@ export default function HomeScreen() {
     return t('home.goodEvening');
   }
 
-  const recentItems = useMemo(() => shuffle(defaultPlaylists.slice(0, 6)), [communityTracks]);
-  const madeForYou = useMemo(() => shuffle(defaultPlaylists.slice(0, 4)), [communityTracks]);
-  const allTracks = communityTracks.length > 0 ? communityTracks : mockTracks.slice(0, 8);
-  const trendingTracks = useMemo(() => shuffle(allTracks.slice(0, 8)), [allTracks]);
-  const newReleases = useMemo(() => shuffle(albums.slice(0, 6)), [communityTracks]);
+  const trendingTracks = useMemo(() => shuffle(allTrks).slice(0, 8), [allTrks]);
+
+  const albumCards = useMemo(() => {
+    const map = new Map<string, AlbumCard>();
+    for (const t of allTrks) {
+      if (t.album && !map.has(t.album)) {
+        map.set(t.album, { name: t.album, artist: t.artist, artwork: t.artwork });
+      }
+    }
+    return shuffle([...map.values()]).slice(0, 8);
+  }, [allTrks]);
+
+  const artistCards = useMemo(() => {
+    const map = new Map<string, ArtistCard>();
+    for (const t of allTrks) {
+      if (t.artist && !map.has(t.artist)) {
+        map.set(t.artist, { name: t.artist, image: t.artwork });
+      }
+    }
+    return shuffle([...map.values()]).slice(0, 8);
+  }, [allTrks]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -145,126 +172,100 @@ export default function HomeScreen() {
             ))}
           </View>
 
-          {/* Recent items grid (2 columns) */}
-          {filter !== 'music' && (
-            <View style={styles.recentGrid}>
-              {recentItems.map((item) => (
-                <RecentCard
-                  key={item.id}
-                  title={item.title}
-                  artwork={item.artwork}
-                  onPress={() => router.push(`/playlist/${item.id}`)}
-                />
-              ))}
-            </View>
-          )}
-
-          {/* Made For You */}
-          {filter !== 'music' && (
+          {isLoading ? (
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
+          ) : (
             <>
-              <SectionHeader title={t('home.madeForYou')} />
-              <FlatList
-                data={madeForYou}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalList}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <PlaylistCard playlist={item} showDescription />
-                )}
-              />
-            </>
-          )}
-
-          {/* Community Tracks */}
-          {filter !== 'playlists' && communityTracks.length > 0 && (
-            <>
-              <SectionHeader title={t('home.communityCopyleft')} />
-              <View style={styles.trackSection}>
-                {communityTracks.slice(0, 5).map((track, index) => (
-                  <TrackRow
-                    key={track.id}
-                    track={track}
-                    trackList={communityTracks}
-                    index={index}
+              {/* Playlists */}
+              {filter !== 'music' && playlists.length > 0 && (
+                <>
+                  <SectionHeader title={t('home.madeForYou')} />
+                  <FlatList
+                    data={playlists.slice(0, 6)}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.horizontalList}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.playlistCard}
+                        onPress={() => router.push(`/playlist/${item.id}`)}
+                      >
+                        <Image source={{ uri: item.artwork }} style={styles.playlistArtwork} />
+                        <Text style={styles.playlistTitle} numberOfLines={1}>{item.title}</Text>
+                        <Text style={styles.playlistMeta} numberOfLines={1}>{item.description || 'Playlist'}</Text>
+                      </TouchableOpacity>
+                    )}
                   />
-                ))}
-              </View>
-            </>
-          )}
+                </>
+              )}
 
-          {/* Trending */}
-          {filter !== 'playlists' && (
-            <>
-              <SectionHeader title={t('home.trending')} />
-              {isLoadingTracks ? (
-                <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 20 }} />
-              ) : (
-                <View style={styles.trackSection}>
-                  {trendingTracks.slice(0, 5).map((track, index) => (
-                    <TrackRow
-                      key={track.id}
-                      track={track}
-                      trackList={trendingTracks}
-                      index={index}
-                    />
-                  ))}
+              {/* Trending Tracks */}
+              {filter !== 'playlists' && trendingTracks.length > 0 && (
+                <>
+                  <SectionHeader title={t('home.trending')} />
+                  <View style={styles.trackSection}>
+                    {trendingTracks.slice(0, 5).map((track, index) => (
+                      <TrackRow
+                        key={track.id}
+                        track={track}
+                        trackList={trendingTracks}
+                        index={index}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {/* Albums */}
+              {filter !== 'playlists' && albumCards.length > 0 && (
+                <>
+                  <SectionHeader title={t('home.newReleases')} />
+                  <FlatList
+                    data={albumCards}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.horizontalList}
+                    keyExtractor={(item) => item.name}
+                    renderItem={({ item }) => (
+                      <View style={styles.albumCard}>
+                        <Image source={{ uri: item.artwork }} style={styles.albumArtwork} />
+                        <Text style={styles.albumTitle} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.albumArtist} numberOfLines={1}>{item.artist}</Text>
+                      </View>
+                    )}
+                  />
+                </>
+              )}
+
+              {/* Artists */}
+              {filter !== 'playlists' && artistCards.length > 0 && (
+                <>
+                  <SectionHeader title={t('home.popularArtists')} />
+                  <FlatList
+                    data={artistCards}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.horizontalList}
+                    keyExtractor={(item) => item.name}
+                    renderItem={({ item }) => (
+                      <View style={styles.artistCard}>
+                        <Image source={{ uri: item.image }} style={styles.artistImage} />
+                        <Text style={styles.artistName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.artistLabel}>{t('home.artist')}</Text>
+                      </View>
+                    )}
+                  />
+                </>
+              )}
+
+              {/* Empty state */}
+              {allTrks.length === 0 && playlists.length === 0 && (
+                <View style={styles.emptyState}>
+                  <Ionicons name="musical-notes" size={48} color={Colors.textInactive} />
+                  <Text style={styles.emptyText}>Nenhuma música ainda</Text>
                 </View>
               )}
-            </>
-          )}
-
-          {/* New Releases */}
-          {filter !== 'playlists' && (
-            <>
-              <SectionHeader title={t('home.newReleases')} />
-              <FlatList
-                data={newReleases}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalList}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.albumCard}>
-                    <Image
-                      source={{ uri: item.artwork }}
-                      style={styles.albumArtwork}
-                    />
-                    <Text style={styles.albumTitle} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    <Text style={styles.albumArtist} numberOfLines={1}>
-                      {item.artist}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              />
-            </>
-          )}
-
-          {/* Popular Artists */}
-          {filter !== 'playlists' && (
-            <>
-              <SectionHeader title={t('home.popularArtists')} />
-              <FlatList
-                data={artists.slice(0, 6)}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalList}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.artistCard}>
-                    <Image
-                      source={{ uri: item.image }}
-                      style={styles.artistImage}
-                    />
-                    <Text style={styles.artistName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.artistLabel}>{t('home.artist')}</Text>
-                  </TouchableOpacity>
-                )}
-              />
             </>
           )}
 
@@ -354,17 +355,32 @@ const styles = StyleSheet.create({
     color: Colors.background,
     fontWeight: '700',
   },
-  recentGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: Layout.padding.sm,
-    marginTop: Layout.padding.sm,
-  },
   horizontalList: {
     paddingHorizontal: Layout.padding.md,
   },
   trackSection: {
     marginTop: Layout.padding.xs,
+  },
+  playlistCard: {
+    width: 150,
+    marginRight: Layout.padding.sm,
+  },
+  playlistArtwork: {
+    width: 150,
+    height: 150,
+    borderRadius: Layout.borderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  playlistTitle: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: Layout.padding.sm,
+  },
+  playlistMeta: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
   },
   albumCard: {
     width: 150,
@@ -409,6 +425,15 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  emptyText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    marginTop: Layout.padding.md,
   },
   banner: {
     marginHorizontal: Layout.padding.md,

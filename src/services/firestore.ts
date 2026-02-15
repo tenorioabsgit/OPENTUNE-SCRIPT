@@ -140,6 +140,31 @@ export async function deleteTrackMetadata(trackId: string): Promise<void> {
   await deleteDoc(doc(db, 'tracks', trackId));
 }
 
+export async function getTracksByIds(trackIds: string[]): Promise<Track[]> {
+  if (trackIds.length === 0) return [];
+  const results: Track[] = [];
+  // Firestore 'in' queries support max 30 items per batch
+  for (let i = 0; i < trackIds.length; i += 30) {
+    const batch = trackIds.slice(i, i + 30);
+    const q = query(collection(db, 'tracks'), where('id', 'in', batch));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      results.push(docToTrack(d.id, d.data()));
+    }
+  }
+  return results;
+}
+
+export async function getAllTracks(limitCount = 100): Promise<Track[]> {
+  const q = query(
+    collection(db, 'tracks'),
+    orderBy('addedAt', 'desc'),
+    limit(limitCount)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => docToTrack(d.id, d.data()));
+}
+
 export async function getAllCopyleftTracks(limitCount = 50): Promise<Track[]> {
   const q = query(
     collection(db, 'tracks'),

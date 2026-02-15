@@ -1,24 +1,23 @@
 /**
  * Spotfly - ccMixter Copyleft Music Importer
  *
- * Fetches CC-licensed music from ccMixter and saves to Firestore.
- * Uses child_process to call curl (avoids Node TLS/header issues).
+ * Fetches CC-licensed music from ccMixter and saves to Firestore
+ * using Firebase Admin SDK (service account).
  *
  * Usage: node scripts/import-ccmixter.mjs
  */
 
 import { execSync } from 'node:child_process';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { readFileSync } from 'node:fs';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyAlcChuWLkw9-zuf_GAkvU3drg6Hz1NQhc',
-  authDomain: 'spotfly-app.firebaseapp.com',
-  projectId: 'spotfly-app',
-  storageBucket: 'spotfly-app.firebasestorage.app',
-  messagingSenderId: '215760117220',
-  appId: '1:215760117220:web:62871c1c1fc7f651503bf1',
-};
+const serviceAccount = JSON.parse(
+  readFileSync(new URL('./serviceAccountKey.json', import.meta.url), 'utf-8')
+);
+
+initializeApp({ credential: cert(serviceAccount) });
+const db = getFirestore();
 
 const TAGS = [
   'instrumental', 'electronic', 'ambient', 'hip_hop', 'rock',
@@ -46,11 +45,8 @@ function parseDuration(ps) {
 }
 
 async function main() {
-  console.log('🎵 Spotfly - ccMixter Importer\n');
-
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  console.log('✅ Firebase OK\n');
+  console.log('🎵 Spotfly - ccMixter Importer (Admin SDK)\n');
+  console.log('✅ Firebase Admin OK\n');
 
   let totalSaved = 0;
   let totalSkipped = 0;
@@ -74,11 +70,11 @@ async function main() {
       if (!mp3File?.download_url) continue;
 
       const id = `ccmixter-${item.upload_id}`;
-      const docRef = doc(db, 'tracks', id);
+      const docRef = db.collection('tracks').doc(id);
 
       // Skip existing
-      const existing = await getDoc(docRef);
-      if (existing.exists()) {
+      const existing = await docRef.get();
+      if (existing.exists) {
         skipped++;
         totalSkipped++;
         continue;
@@ -106,11 +102,11 @@ async function main() {
         titleLower: (item.upload_name || '').toLowerCase(),
         source: 'ccmixter',
         sourceUrl: item.file_page_url || '',
-        addedAt: serverTimestamp(),
+        addedAt: FieldValue.serverTimestamp(),
       };
 
       try {
-        await setDoc(docRef, track);
+        await docRef.set(track);
         saved++;
         totalSaved++;
       } catch (e) {

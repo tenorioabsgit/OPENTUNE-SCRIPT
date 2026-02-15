@@ -16,15 +16,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
 import { usePlayer } from '../../src/contexts/PlayerContext';
-import {
-  defaultPlaylists,
-  getTracksByIds,
-  tracks as allTracks,
-  formatDuration,
-} from '../../src/data/mockData';
+import { formatDuration } from '../../src/data/mockData';
 import { Playlist, Track } from '../../src/types';
 import TrackRow from '../../src/components/TrackRow';
 import { loadData, saveData, KEYS } from '../../src/services/storage';
+import { getPlaylist as firestoreGetPlaylist, getTracksByIds as firestoreGetTracksByIds } from '../../src/services/firestore';
 
 export default function PlaylistScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -38,21 +34,19 @@ export default function PlaylistScreen() {
   }, [id]);
 
   async function loadPlaylist() {
-    // Check default playlists first
-    let found = defaultPlaylists.find(p => p.id === id);
-
-    // Check user playlists
-    if (!found) {
-      const userPlaylists = await loadData<Playlist[]>(KEYS.PLAYLISTS);
-      if (userPlaylists) {
-        found = userPlaylists.find(p => p.id === id);
+    if (!id) return;
+    try {
+      // Load from Firestore
+      const found = await firestoreGetPlaylist(id);
+      if (found) {
+        setPlaylist(found);
+        if (found.trackIds.length > 0) {
+          const tracks = await firestoreGetTracksByIds(found.trackIds);
+          setPlaylistTracks(tracks);
+        }
       }
-    }
-
-    if (found) {
-      setPlaylist(found);
-      const tracks = getTracksByIds(found.trackIds);
-      setPlaylistTracks(tracks);
+    } catch (e) {
+      console.error('Error loading playlist:', e);
     }
   }
 
@@ -89,13 +83,7 @@ export default function PlaylistScreen() {
             const updatedIds = playlist.trackIds.filter(tid => tid !== track.id);
             const updatedPlaylist = { ...playlist, trackIds: updatedIds, updatedAt: Date.now() };
             setPlaylist(updatedPlaylist);
-            setPlaylistTracks(getTracksByIds(updatedIds));
-            // Save if user playlist
-            if (playlist.id.startsWith('playlist-user-')) {
-              const userPlaylists = await loadData<Playlist[]>(KEYS.PLAYLISTS) || [];
-              const updated = userPlaylists.map(p => p.id === playlist.id ? updatedPlaylist : p);
-              await saveData(KEYS.PLAYLISTS, updated);
-            }
+            setPlaylistTracks(prev => prev.filter(t => t.id !== track.id));
           },
         },
       ]

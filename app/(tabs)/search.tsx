@@ -15,8 +15,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
-import { searchCategories, searchAll } from '../../src/data/mockData';
-import { searchTracksByTitle, getAllCopyleftTracks } from '../../src/services/firestore';
+import { searchCategories } from '../../src/data/mockData';
+import { searchTracksByTitle } from '../../src/services/firestore';
 import { Track } from '../../src/types';
 import CategoryCard from '../../src/components/CategoryCard';
 import TrackRow from '../../src/components/TrackRow';
@@ -56,16 +56,13 @@ export default function SearchScreen() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Combine mock + Firestore results
   const results = useMemo(() => {
     if (!query.trim()) return null;
-    const mockResults = searchAll(query);
-    // Merge Firestore tracks, deduplicating by id
-    const mockIds = new Set(mockResults.tracks.map(t => t.id));
-    const extraTracks = firestoreTracks.filter(t => !mockIds.has(t.id));
     return {
-      ...mockResults,
-      tracks: [...extraTracks, ...mockResults.tracks],
+      tracks: firestoreTracks,
+      albums: [] as any[],
+      artists: [] as any[],
+      playlists: [] as any[],
     };
   }, [query, firestoreTracks]);
 

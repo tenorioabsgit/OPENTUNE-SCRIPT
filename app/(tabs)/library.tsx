@@ -19,7 +19,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
 import { Playlist, Track } from '../../src/types';
-import { defaultPlaylists } from '../../src/data/mockData';
 import {
   getUserPlaylists,
   getPublicPlaylists,
@@ -46,7 +45,7 @@ export default function LibraryScreen() {
   const { user, signOut } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
-  const [playlists, setPlaylists] = useState<Playlist[]>(defaultPlaylists);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('recent');
   const [viewType, setViewType] = useState<ViewType>('list');
@@ -73,13 +72,13 @@ export default function LibraryScreen() {
         // Merge: user playlists + public (deduped) + defaults as fallback
         const allIds = new Set(userPl.map(p => p.id));
         const deduped = publicPl.filter(p => !allIds.has(p.id));
-        setPlaylists([...userPl, ...deduped, ...defaultPlaylists]);
+        setPlaylists([...userPl, ...deduped]);
       } else {
-        setPlaylists(defaultPlaylists);
+        setPlaylists([]);
       }
     } catch (e) {
       console.error('Error loading playlists:', e);
-      setPlaylists(defaultPlaylists);
+      setPlaylists([]);
     } finally {
       setIsLoadingPlaylists(false);
     }
