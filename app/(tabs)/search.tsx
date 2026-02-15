@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Image,
+  Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/Colors';
@@ -16,6 +18,7 @@ import { searchCategories, searchAll, tracks } from '../../src/data/mockData';
 import CategoryCard from '../../src/components/CategoryCard';
 import TrackRow from '../../src/components/TrackRow';
 import { usePlayer } from '../../src/contexts/PlayerContext';
+import { useAuth } from '../../src/contexts/AuthContext';
 
 type Tab = 'all' | 'tracks' | 'artists' | 'albums' | 'playlists';
 
@@ -23,6 +26,7 @@ export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const { playTrack } = usePlayer();
+  const { signOut } = useAuth();
 
   const results = useMemo(() => {
     if (!query.trim()) return null;
@@ -187,6 +191,22 @@ export default function SearchScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Buscar</Text>
+        <TouchableOpacity
+          onPress={() => {
+            if (Platform.OS === 'web') {
+              if (window.confirm('Deseja sair da sua conta?')) {
+                signOut();
+              }
+            } else {
+              Alert.alert('Sair', 'Deseja sair da sua conta?', [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Sair', style: 'destructive', onPress: () => signOut() },
+              ]);
+            }
+          }}
+        >
+          <Ionicons name="log-out-outline" size={24} color="#ff5252" />
+        </TouchableOpacity>
       </View>
 
       {/* Search input */}
@@ -229,6 +249,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: Layout.padding.md,
     paddingTop: Layout.padding.md,
     paddingBottom: Layout.padding.sm,

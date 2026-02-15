@@ -9,6 +9,8 @@ import {
   Image,
   SafeAreaView,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,7 +36,7 @@ import TrackRow from '../../src/components/TrackRow';
 type FilterType = 'all' | 'music' | 'playlists';
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { playTrack } = usePlayer();
   const { t } = useLanguage();
   const router = useRouter();
@@ -95,11 +97,22 @@ export default function HomeScreen() {
               <TouchableOpacity style={styles.headerIcon}>
                 <Ionicons name="notifications-outline" size={26} color={Colors.textPrimary} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.headerIcon}>
-                <Image
-                  source={{ uri: user?.photoUrl || 'https://i.pravatar.cc/40' }}
-                  style={styles.avatar}
-                />
+              <TouchableOpacity
+                style={styles.headerIcon}
+                onPress={() => {
+                  if (Platform.OS === 'web') {
+                    if (window.confirm('Deseja sair da sua conta?')) {
+                      signOut();
+                    }
+                  } else {
+                    Alert.alert('Sair', 'Deseja sair da sua conta?', [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Sair', style: 'destructive', onPress: () => signOut() },
+                    ]);
+                  }
+                }}
+              >
+                <Ionicons name="log-out-outline" size={26} color="#ff5252" />
               </TouchableOpacity>
             </View>
           </View>
@@ -308,11 +321,6 @@ const styles = StyleSheet.create({
   },
   headerIcon: {
     marginLeft: Layout.padding.md,
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
   },
   filterRow: {
     flexDirection: 'row',
