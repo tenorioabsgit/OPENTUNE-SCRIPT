@@ -33,7 +33,7 @@ type ViewType = 'list' | 'grid';
 
 export default function LibraryScreen() {
   const { user, signOut } = useAuth();
-  const { t, language, setLanguage } = useLanguage();
+  const { t } = useLanguage();
   const router = useRouter();
   const [playlists, setPlaylists] = useState<Playlist[]>(defaultPlaylists);
   const [filter, setFilter] = useState<FilterType>('all');
@@ -44,7 +44,7 @@ export default function LibraryScreen() {
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
 
   useEffect(() => {
     loadPlaylists();
@@ -170,22 +170,36 @@ export default function LibraryScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.profileRow}
-          onPress={() => setShowProfileMenu(true)}
-        >
+        <View style={styles.profileRow}>
           <Image
             source={{ uri: user?.photoUrl || 'https://i.pravatar.cc/40' }}
             style={styles.avatar}
           />
           <Text style={styles.headerTitle}>{t('library.title')}</Text>
-        </TouchableOpacity>
+        </View>
         <View style={styles.headerIcons}>
           <TouchableOpacity
             style={styles.headerIcon}
             onPress={() => setShowCreateModal(true)}
           >
             <Ionicons name="add" size={28} color={Colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerIcon}
+            onPress={() => {
+              if (Platform.OS === 'web') {
+                if (window.confirm('Deseja sair da sua conta?')) {
+                  signOut();
+                }
+              } else {
+                Alert.alert('Sair', 'Deseja sair da sua conta?', [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { text: 'Sair', style: 'destructive', onPress: () => signOut() },
+                ]);
+              }
+            }}
+          >
+            <Ionicons name="log-out-outline" size={24} color="#ff5252" />
           </TouchableOpacity>
         </View>
       </View>
@@ -279,66 +293,6 @@ export default function LibraryScreen() {
             <View style={{ height: Layout.miniPlayerHeight + 80 }} />
           }
         />
-      )}
-
-      {/* Profile Menu Dropdown */}
-      {showProfileMenu && (
-        <>
-          <TouchableOpacity
-            style={styles.menuBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowProfileMenu(false)}
-          />
-          <View style={styles.menuContainer}>
-            {/* Profile Info */}
-            <View style={styles.menuProfile}>
-              <Image
-                source={{ uri: user?.photoUrl || 'https://i.pravatar.cc/40' }}
-                style={styles.menuAvatar}
-              />
-              <View style={styles.menuProfileInfo}>
-                <Text style={styles.menuProfileName} numberOfLines={1}>
-                  {user?.displayName || 'Usuário'}
-                </Text>
-                <Text style={styles.menuProfileEmail} numberOfLines={1}>
-                  {user?.email || ''}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.menuDivider} />
-
-            {/* Language Toggle */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setLanguage(language === 'pt' ? 'en' : 'pt');
-              }}
-            >
-              <Ionicons name="language-outline" size={22} color={Colors.textPrimary} />
-              <Text style={styles.menuItemText}>
-                {language === 'pt' ? 'Switch to English' : 'Mudar para Português'}
-              </Text>
-              <View style={styles.menuBadge}>
-                <Text style={styles.menuBadgeText}>{language.toUpperCase()}</Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Logout */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowProfileMenu(false);
-                signOut();
-              }}
-            >
-              <Ionicons name="log-out-outline" size={22} color="#ff5252" />
-              <Text style={[styles.menuItemText, { color: '#ff5252' }]}>
-                {t('profile.logout')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </>
       )}
 
       {/* Create Playlist Modal */}
@@ -555,82 +509,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  menuBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    zIndex: 98,
-  },
-  menuContainer: {
-    position: 'absolute',
-    top: 55,
-    left: Layout.padding.md,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Layout.borderRadius.lg,
-    padding: Layout.padding.md,
-    width: 280,
-    zIndex: 99,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  menuProfile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Layout.padding.sm,
-  },
-  menuAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginRight: Layout.padding.sm,
-  },
-  menuProfileInfo: {
-    flex: 1,
-  },
-  menuProfileName: {
-    color: Colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  menuProfileEmail: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  menuDivider: {
-    height: 1,
-    backgroundColor: Colors.inactive,
-    marginVertical: Layout.padding.sm,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-  },
-  menuItemText: {
-    color: Colors.textPrimary,
-    fontSize: 15,
-    marginLeft: Layout.padding.sm,
-    flex: 1,
-  },
-  menuBadge: {
-    backgroundColor: Colors.primary,
-    borderRadius: Layout.borderRadius.round,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  menuBadgeText: {
-    color: Colors.background,
-    fontSize: 11,
-    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,
