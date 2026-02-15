@@ -31,26 +31,34 @@ export default function RegisterScreen() {
   const { t } = useLanguage();
   const router = useRouter();
 
+  function showAlert(title: string, msg: string) {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n${msg}`);
+    } else {
+      Alert.alert(title, msg);
+    }
+  }
+
   async function handleRegister() {
     if (!displayName.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Erro', 'Preencha todos os campos');
+      showAlert('Erro', 'Preencha todos os campos');
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Erro', 'As senhas não coincidem');
+      showAlert('Erro', 'As senhas não coincidem');
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Erro', 'A senha deve ter pelo menos 6 caracteres');
+      showAlert('Erro', 'A senha deve ter pelo menos 6 caracteres');
       return;
     }
     setIsLoading(true);
     const result = await signUp(email, password, displayName);
     setIsLoading(false);
     if (!result.success) {
-      Alert.alert('Erro', result.error || 'Falha ao criar conta.');
+      showAlert('Erro', result.error || 'Falha ao criar conta.');
     } else {
-      Alert.alert('Conta criada!', `Bem-vindo ao Spotfly, ${displayName}!`);
+      showAlert('Conta criada!', `Bem-vindo ao Spotfly, ${displayName}!`);
     }
   }
 
@@ -59,7 +67,7 @@ export default function RegisterScreen() {
     const result = await signInWithGoogle();
     setIsLoading(false);
     if (!result.success) {
-      Alert.alert('Erro', result.error || 'Falha ao conectar com Google.');
+      showAlert('Erro', result.error || 'Falha ao conectar com Google.');
     }
   }
 

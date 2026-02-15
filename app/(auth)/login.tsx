@@ -29,16 +29,24 @@ export default function LoginScreen() {
   const { t } = useLanguage();
   const router = useRouter();
 
+  function showAlert(title: string, msg: string) {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n${msg}`);
+    } else {
+      Alert.alert(title, msg);
+    }
+  }
+
   async function handleLogin() {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Erro', 'Preencha todos os campos');
+      showAlert('Erro', 'Preencha todos os campos');
       return;
     }
     setIsLoading(true);
     const result = await signIn(email, password);
     setIsLoading(false);
     if (!result.success) {
-      Alert.alert('Erro', result.error || 'Falha ao fazer login.');
+      showAlert('Erro', result.error || 'Falha ao fazer login.');
     }
     // Navigation is handled by AuthContext via onAuthStateChanged
   }
@@ -48,7 +56,7 @@ export default function LoginScreen() {
     const result = await signInWithGoogle();
     setIsLoading(false);
     if (!result.success) {
-      Alert.alert('Erro', result.error || 'Falha ao conectar com Google.');
+      showAlert('Erro', result.error || 'Falha ao conectar com Google.');
     }
   }
 

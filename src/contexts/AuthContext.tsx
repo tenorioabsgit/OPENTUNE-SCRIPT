@@ -8,7 +8,6 @@ import {
   updateProfile,
   GoogleAuthProvider,
   signInWithCredential,
-  signInWithPopup,
   User as FirebaseUser,
 } from 'firebase/auth';
 import * as WebBrowser from 'expo-web-browser';
@@ -122,18 +121,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signInWithGoogleAuth(): Promise<{ success: boolean; error?: string }> {
     try {
-      // Web: use Firebase signInWithPopup (native browser popup)
+      const nonce = Math.random().toString(36).substring(2, 15);
+
       if (Platform.OS === 'web') {
-        const provider = new GoogleAuthProvider();
-        provider.addScope('email');
-        provider.addScope('profile');
-        await signInWithPopup(auth, provider);
+        // Web: redirect to Google OAuth with state=web
+        // callback.html will sign in with Firebase SDK and redirect back
+        const params = new URLSearchParams({
+          client_id: GOOGLE_WEB_CLIENT_ID,
+          redirect_uri: GOOGLE_REDIRECT_URI,
+          response_type: 'id_token',
+          scope: 'openid email profile',
+          state: 'web',
+          nonce,
+        });
+        window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
         return { success: true };
       }
 
-      // Mobile: use custom OAuth flow with Vercel callback page
+      // Mobile: use custom OAuth flow with WebBrowser
       const state = Math.random().toString(36).substring(2, 15);
-      const nonce = Math.random().toString(36).substring(2, 15);
 
       const params = new URLSearchParams({
         client_id: GOOGLE_WEB_CLIENT_ID,

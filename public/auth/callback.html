@@ -27,25 +27,72 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     p { font-size: 16px; margin: 8px 0; }
     .hint { font-size: 12px; color: #aaa; margin-top: 16px; }
+    .error { color: #ff5252; }
     a { color: #1DB954; }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="container" id="container">
     <div class="spinner"></div>
-    <p>Redirecionando para o Spotfly...</p>
-    <p class="hint" id="fallback" style="display:none;">
-      Se nada acontecer, <a id="fallbackLink" href="spotfly://auth">toque aqui para voltar ao app</a>.
-    </p>
+    <p>Autenticando...</p>
   </div>
-  <script>
-    (function() {
-      var hash = window.location.hash.substring(1);
-      if (!hash) {
-        document.querySelector('.container').innerHTML =
-          '<p>Nenhum token recebido.</p><p class="hint"><a href="spotfly://auth">Voltar ao app</a></p>';
-        return;
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
+    import { getAuth, signInWithCredential, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+
+    var container = document.getElementById('container');
+    var hash = window.location.hash.substring(1);
+
+    if (!hash) {
+      container.innerHTML = '<p class="error">Nenhum token recebido.</p>';
+      throw new Error('No hash');
+    }
+
+    var params = new URLSearchParams(hash);
+    var idToken = params.get('id_token');
+    var state = params.get('state') || '';
+
+    if (!idToken) {
+      container.innerHTML = '<p class="error">Token não encontrado.</p>';
+      throw new Error('No id_token');
+    }
+
+    // Detect platform: "web" state = came from web app, otherwise = mobile app
+    var isWeb = (state === 'web');
+
+    if (isWeb) {
+      // ========================================
+      // WEB FLOW: Sign in with Firebase directly here, then redirect to main app
+      // ========================================
+      try {
+        var firebaseConfig = {
+          apiKey: 'AIzaSyAlcChuWLkw9-zuf_GAkvU3drg6Hz1NQhc',
+          authDomain: 'spotfly-app.firebaseapp.com',
+          projectId: 'spotfly-app',
+          storageBucket: 'spotfly-app.firebasestorage.app',
+          messagingSenderId: '215760117220',
+          appId: '1:215760117220:web:62871c1c1fc7f651503bf1',
+        };
+
+        var app = initializeApp(firebaseConfig);
+        var auth = getAuth(app);
+        var credential = GoogleAuthProvider.credential(idToken);
+        await signInWithCredential(auth, credential);
+
+        container.innerHTML = '<p>Login realizado! Redirecionando...</p>';
+        window.location.href = window.location.origin + '/';
+      } catch (e) {
+        console.error('Firebase auth error:', e);
+        container.innerHTML =
+          '<p class="error">Erro ao autenticar: ' + e.message + '</p>' +
+          '<p class="hint"><a href="' + window.location.origin + '/">Voltar ao Spotfly</a></p>';
       }
+    } else {
+      // ========================================
+      // MOBILE FLOW: Redirect to app via Intent URI / deep link
+      // ========================================
+      container.querySelector('p').textContent = 'Redirecionando para o Spotfly...';
 
       var deepLink = 'spotfly://auth?' + hash;
 
@@ -53,22 +100,21 @@
       var intentUri = 'intent://auth?' + hash +
         '#Intent;scheme=spotfly;package=com.spotfly.app;end;';
 
-      // Try Android Intent first (works in Chrome Custom Tabs)
+      // Try Android Intent first
       window.location.href = intentUri;
 
-      // Fallback: try direct deep link after short delay
+      // Fallback: try direct deep link
       setTimeout(function() {
         window.location.href = deepLink;
       }, 500);
 
       // Show manual fallback link after 2s
       setTimeout(function() {
-        var fallbackEl = document.getElementById('fallback');
-        var fallbackLink = document.getElementById('fallbackLink');
-        if (fallbackEl) fallbackEl.style.display = 'block';
-        if (fallbackLink) fallbackLink.href = deepLink;
+        container.innerHTML =
+          '<p>Redirecionando para o Spotfly...</p>' +
+          '<p class="hint">Se nada acontecer, <a href="' + deepLink + '">toque aqui para voltar ao app</a>.</p>';
       }, 2000);
-    })();
+    }
   </script>
 </body>
 </html>
