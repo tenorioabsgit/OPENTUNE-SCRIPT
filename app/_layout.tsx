@@ -19,7 +19,7 @@ function AppContent() {
 
   const isTabScreen = segments[0] === '(tabs)';
   const isPlayerScreen = segments[0] === 'player';
-  const isAuthScreen = segments[0] === '(auth)';
+  const isAuthScreen = segments[0] === '(auth)' || segments[0] === 'auth';
 
   const showGlobalMiniPlayer = currentTrack && !isTabScreen && !isPlayerScreen && !isAuthScreen;
 
@@ -47,6 +47,8 @@ function AppContent() {
           <Stack.Screen name="artist/[name]" options={{ headerShown: false }} />
           <Stack.Screen name="upload" options={{ headerShown: false }} />
           <Stack.Screen name="profile" options={{ headerShown: false }} />
+          <Stack.Screen name="auth" options={{ headerShown: false }} />
+          <Stack.Screen name="+not-found" options={{ headerShown: false }} />
         </Stack>
         {showGlobalMiniPlayer && (
           <View style={[styles.globalMiniPlayer, { bottom: insets.bottom }]}>
