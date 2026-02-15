@@ -165,6 +165,16 @@ export async function getAllTracks(limitCount = 100): Promise<Track[]> {
   return snap.docs.map(d => docToTrack(d.id, d.data()));
 }
 
+export async function getTracksByAlbum(albumName: string): Promise<Track[]> {
+  const q = query(
+    collection(db, 'tracks'),
+    where('album', '==', albumName)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => docToTrack(d.id, d.data()))
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+}
+
 export async function getAllCopyleftTracks(limitCount = 50): Promise<Track[]> {
   const q = query(
     collection(db, 'tracks'),

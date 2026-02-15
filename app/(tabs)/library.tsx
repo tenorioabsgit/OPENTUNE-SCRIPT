@@ -321,11 +321,16 @@ export default function LibraryScreen() {
                   <Text style={styles.albumsSectionTitle}>{t('library.myAlbums')}</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumsScroll}>
                     {userAlbums.map((album, i) => (
-                      <View key={i} style={styles.albumCard}>
+                      <TouchableOpacity
+                        key={i}
+                        style={styles.albumCard}
+                        onPress={() => router.push(`/album/${encodeURIComponent(album.albumName)}`)}
+                        activeOpacity={0.7}
+                      >
                         <Image source={{ uri: album.artwork }} style={styles.albumCardArt} />
                         <Text style={styles.albumCardTitle} numberOfLines={1}>{album.albumName}</Text>
                         <Text style={styles.albumCardMeta} numberOfLines={1}>{album.artist} · {album.trackCount} {t('library.tracks')}</Text>
-                      </View>
+                      </TouchableOpacity>
                     ))}
                   </ScrollView>
                 </View>

@@ -228,11 +228,15 @@ export default function HomeScreen() {
                     contentContainerStyle={styles.horizontalList}
                     keyExtractor={(item) => item.name}
                     renderItem={({ item }) => (
-                      <View style={styles.albumCard}>
+                      <TouchableOpacity
+                        style={styles.albumCard}
+                        onPress={() => router.push(`/album/${encodeURIComponent(item.name)}`)}
+                        activeOpacity={0.7}
+                      >
                         <Image source={{ uri: item.artwork }} style={styles.albumArtwork} />
                         <Text style={styles.albumTitle} numberOfLines={1}>{item.name}</Text>
                         <Text style={styles.albumArtist} numberOfLines={1}>{item.artist}</Text>
-                      </View>
+                      </TouchableOpacity>
                     )}
                   />
                 </>
