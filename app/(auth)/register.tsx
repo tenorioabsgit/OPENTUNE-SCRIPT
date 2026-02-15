@@ -19,6 +19,7 @@ import { useAuth } from '../../src/contexts/AuthContext';
 import { useLanguage } from '../../src/contexts/LanguageContext';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
+import LanguageToggle from '../../src/components/LanguageToggle';
 
 export default function RegisterScreen() {
   const [displayName, setDisplayName] = useState('');
@@ -85,9 +86,12 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {/* Header */}
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={28} color={Colors.textPrimary} />
-          </TouchableOpacity>
+          <View style={styles.topRow}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <Ionicons name="chevron-back" size={28} color={Colors.textPrimary} />
+            </TouchableOpacity>
+            <LanguageToggle />
+          </View>
 
           {/* Logo */}
           <View style={styles.logoContainer}>
@@ -222,8 +226,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Layout.padding.xl,
     paddingVertical: Layout.padding.xl,
   },
-  backButton: {
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: Layout.padding.md,
+  },
+  backButton: {
   },
   logoContainer: {
     alignItems: 'center',

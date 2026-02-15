@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,16 @@ import PlaylistCard from '../../src/components/PlaylistCard';
 import RecentCard from '../../src/components/RecentCard';
 import SectionHeader from '../../src/components/SectionHeader';
 import TrackRow from '../../src/components/TrackRow';
+import LanguageToggle from '../../src/components/LanguageToggle';
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 type FilterType = 'all' | 'music' | 'playlists';
 
@@ -68,11 +78,11 @@ export default function HomeScreen() {
     return t('home.goodEvening');
   }
 
-  const recentItems = defaultPlaylists.slice(0, 6);
-  const madeForYou = defaultPlaylists.slice(0, 4);
+  const recentItems = useMemo(() => shuffle(defaultPlaylists.slice(0, 6)), [communityTracks]);
+  const madeForYou = useMemo(() => shuffle(defaultPlaylists.slice(0, 4)), [communityTracks]);
   const allTracks = communityTracks.length > 0 ? communityTracks : mockTracks.slice(0, 8);
-  const trendingTracks = allTracks.slice(0, 8);
-  const newReleases = albums.slice(0, 6);
+  const trendingTracks = useMemo(() => shuffle(allTracks.slice(0, 8)), [allTracks]);
+  const newReleases = useMemo(() => shuffle(albums.slice(0, 6)), [communityTracks]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -88,14 +98,12 @@ export default function HomeScreen() {
           <View style={styles.header}>
             <Text style={styles.greeting}>{greeting}</Text>
             <View style={styles.headerIcons}>
+              <LanguageToggle />
               <TouchableOpacity
                 style={styles.headerIcon}
                 onPress={() => router.push('/upload')}
               >
                 <Ionicons name="add-circle-outline" size={28} color={Colors.textPrimary} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerIcon}>
-                <Ionicons name="notifications-outline" size={26} color={Colors.textPrimary} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.headerIcon}

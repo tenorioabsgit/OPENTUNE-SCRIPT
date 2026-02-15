@@ -19,6 +19,7 @@ import { useAuth } from '../../src/contexts/AuthContext';
 import { useLanguage } from '../../src/contexts/LanguageContext';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
+import LanguageToggle from '../../src/components/LanguageToggle';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -73,6 +74,11 @@ export default function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Language Toggle */}
+          <View style={styles.langRow}>
+            <LanguageToggle />
+          </View>
+
           {/* Logo */}
           <View style={styles.logoContainer}>
             <Image
@@ -181,6 +187,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: Layout.padding.xl,
     paddingVertical: Layout.padding.xl,
+  },
+  langRow: {
+    alignItems: 'flex-end',
+    marginBottom: Layout.padding.sm,
   },
   logoContainer: {
     alignItems: 'center',

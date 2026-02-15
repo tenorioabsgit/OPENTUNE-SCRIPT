@@ -12,20 +12,31 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
-import { Playlist } from '../../src/types';
+import { Playlist, Track } from '../../src/types';
 import { defaultPlaylists } from '../../src/data/mockData';
 import {
   getUserPlaylists,
   getPublicPlaylists,
   createPlaylist as firestoreCreatePlaylist,
+  getUserTracks,
 } from '../../src/services/firestore';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useLanguage } from '../../src/contexts/LanguageContext';
+import LanguageToggle from '../../src/components/LanguageToggle';
+
+interface AlbumGroup {
+  albumName: string;
+  artist: string;
+  artwork: string;
+  trackCount: number;
+  tracks: Track[];
+}
 
 type FilterType = 'all' | 'playlists' | 'downloaded';
 type SortType = 'recent' | 'alphabetical' | 'creator';
@@ -44,10 +55,11 @@ export default function LibraryScreen() {
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
-
+  const [userAlbums, setUserAlbums] = useState<AlbumGroup[]>([]);
 
   useEffect(() => {
     loadPlaylists();
+    loadUserAlbums();
   }, [user]);
 
   async function loadPlaylists() {
@@ -70,6 +82,32 @@ export default function LibraryScreen() {
       setPlaylists(defaultPlaylists);
     } finally {
       setIsLoadingPlaylists(false);
+    }
+  }
+
+  async function loadUserAlbums() {
+    if (!user) { setUserAlbums([]); return; }
+    try {
+      const tracks = await getUserTracks(user.id);
+      const map = new Map<string, Track[]>();
+      for (const t of tracks) {
+        const key = t.album || t.title;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(t);
+      }
+      const groups: AlbumGroup[] = [];
+      for (const [albumName, albumTracks] of map) {
+        groups.push({
+          albumName,
+          artist: albumTracks[0].artist,
+          artwork: albumTracks[0].artwork,
+          trackCount: albumTracks.length,
+          tracks: albumTracks,
+        });
+      }
+      setUserAlbums(groups);
+    } catch (e) {
+      console.error('Error loading user albums:', e);
     }
   }
 
@@ -178,6 +216,7 @@ export default function LibraryScreen() {
           <Text style={styles.headerTitle}>{t('library.title')}</Text>
         </View>
         <View style={styles.headerIcons}>
+          <LanguageToggle />
           <TouchableOpacity
             style={styles.headerIcon}
             onPress={() => setShowCreateModal(true)}
@@ -276,18 +315,37 @@ export default function LibraryScreen() {
           ]}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            <TouchableOpacity style={styles.likedSongsItem} activeOpacity={0.7}>
-              <View style={styles.likedSongsArtwork}>
-                <Ionicons name="heart" size={24} color={Colors.textPrimary} />
-              </View>
-              <View style={styles.listInfo}>
-                <Text style={styles.listTitle}>{t('library.liked')}</Text>
-                <View style={styles.listMeta}>
-                  <Ionicons name="pin" size={12} color={Colors.primary} />
-                  <Text style={styles.listType}> Playlist · Spotfly</Text>
+            <>
+              {/* User uploaded albums */}
+              {userAlbums.length > 0 && (
+                <View style={styles.albumsSection}>
+                  <Text style={styles.albumsSectionTitle}>{t('library.myAlbums')}</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumsScroll}>
+                    {userAlbums.map((album, i) => (
+                      <View key={i} style={styles.albumCard}>
+                        <Image source={{ uri: album.artwork }} style={styles.albumCardArt} />
+                        <Text style={styles.albumCardTitle} numberOfLines={1}>{album.albumName}</Text>
+                        <Text style={styles.albumCardMeta} numberOfLines={1}>{album.artist} · {album.trackCount} {t('library.tracks')}</Text>
+                      </View>
+                    ))}
+                  </ScrollView>
                 </View>
-              </View>
-            </TouchableOpacity>
+              )}
+
+              {/* Liked Songs */}
+              <TouchableOpacity style={styles.likedSongsItem} activeOpacity={0.7}>
+                <View style={styles.likedSongsArtwork}>
+                  <Ionicons name="heart" size={24} color={Colors.textPrimary} />
+                </View>
+                <View style={styles.listInfo}>
+                  <Text style={styles.listTitle}>{t('library.liked')}</Text>
+                  <View style={styles.listMeta}>
+                    <Ionicons name="pin" size={12} color={Colors.primary} />
+                    <Text style={styles.listType}> Playlist · Spotfly</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </>
           }
           ListFooterComponent={
             <View style={{ height: Layout.miniPlayerHeight + 80 }} />
@@ -385,6 +443,8 @@ const styles = StyleSheet.create({
   },
   headerIcons: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerIcon: {
     marginLeft: Layout.padding.md,
@@ -495,6 +555,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: Layout.padding.sm,
+  },
+  albumsSection: {
+    paddingTop: Layout.padding.sm,
+    paddingBottom: Layout.padding.md,
+  },
+  albumsSectionTitle: {
+    color: Colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    paddingHorizontal: Layout.padding.md,
+    marginBottom: Layout.padding.sm,
+  },
+  albumsScroll: {
+    paddingHorizontal: Layout.padding.md,
+  },
+  albumCard: {
+    width: 140,
+    marginRight: Layout.padding.sm,
+  },
+  albumCardArt: {
+    width: 140,
+    height: 140,
+    borderRadius: Layout.borderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  albumCardTitle: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: Layout.padding.sm,
+  },
+  albumCardMeta: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
   },
   likedSongsItem: {
     flexDirection: 'row',

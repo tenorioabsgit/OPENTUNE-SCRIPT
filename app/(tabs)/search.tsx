@@ -22,6 +22,7 @@ import CategoryCard from '../../src/components/CategoryCard';
 import TrackRow from '../../src/components/TrackRow';
 import { usePlayer } from '../../src/contexts/PlayerContext';
 import { useAuth } from '../../src/contexts/AuthContext';
+import LanguageToggle from '../../src/components/LanguageToggle';
 
 type Tab = 'all' | 'tracks' | 'artists' | 'albums' | 'playlists';
 
@@ -233,8 +234,11 @@ export default function SearchScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Buscar</Text>
-        <TouchableOpacity
-          onPress={() => {
+        <View style={styles.headerRight}>
+          <LanguageToggle />
+          <TouchableOpacity
+            style={styles.logoutBtn}
+            onPress={() => {
             if (Platform.OS === 'web') {
               if (window.confirm('Deseja sair da sua conta?')) {
                 signOut();
@@ -249,6 +253,7 @@ export default function SearchScreen() {
         >
           <Ionicons name="log-out-outline" size={24} color="#ff5252" />
         </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search input */}
@@ -302,6 +307,13 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontSize: 24,
     fontWeight: '700',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  logoutBtn: {
   },
   searchContainer: {
     flexDirection: 'row',

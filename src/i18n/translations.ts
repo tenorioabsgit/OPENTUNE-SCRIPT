@@ -97,6 +97,10 @@ export const translations = {
     en: 'Spotfly is a copyleft music streaming platform. All music here is free to listen, share, remix and redistribute.',
   },
 
+  // ===== Library extras =====
+  'library.myAlbums': { pt: 'Meus Álbuns', en: 'My Albums' },
+  'library.tracks': { pt: 'faixas', en: 'tracks' },
+
   // ===== Tabs =====
   'tab.home': { pt: 'Início', en: 'Home' },
   'tab.search': { pt: 'Buscar', en: 'Search' },
