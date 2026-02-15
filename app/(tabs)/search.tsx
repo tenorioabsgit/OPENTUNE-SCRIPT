@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,14 @@ import {
   Image,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/Colors';
 import { Layout } from '../../src/constants/Layout';
-import { searchCategories, searchAll, tracks } from '../../src/data/mockData';
+import { searchCategories, searchAll } from '../../src/data/mockData';
+import { searchTracksByTitle, getAllCopyleftTracks } from '../../src/services/firestore';
+import { Track } from '../../src/types';
 import CategoryCard from '../../src/components/CategoryCard';
 import TrackRow from '../../src/components/TrackRow';
 import { usePlayer } from '../../src/contexts/PlayerContext';
@@ -27,11 +30,43 @@ export default function SearchScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const { playTrack } = usePlayer();
   const { signOut } = useAuth();
+  const [firestoreTracks, setFirestoreTracks] = useState<Track[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
+  // Search Firestore when query changes (with debounce)
+  useEffect(() => {
+    if (!query.trim()) {
+      setFirestoreTracks([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const tracks = await searchTracksByTitle(query.trim(), 30);
+        setFirestoreTracks(tracks);
+      } catch (e) {
+        console.error('Firestore search error:', e);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // Combine mock + Firestore results
   const results = useMemo(() => {
     if (!query.trim()) return null;
-    return searchAll(query);
-  }, [query]);
+    const mockResults = searchAll(query);
+    // Merge Firestore tracks, deduplicating by id
+    const mockIds = new Set(mockResults.tracks.map(t => t.id));
+    const extraTracks = firestoreTracks.filter(t => !mockIds.has(t.id));
+    return {
+      ...mockResults,
+      tracks: [...extraTracks, ...mockResults.tracks],
+    };
+  }, [query, firestoreTracks]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'all', label: 'Tudo' },
@@ -163,8 +198,15 @@ export default function SearchScreen() {
                 </View>
               )}
 
-            {/* Empty state */}
-            {results.tracks.length === 0 &&
+            {/* Loading / Empty state */}
+            {isSearching && results.tracks.length === 0 && (
+              <View style={styles.emptyState}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={styles.emptyText}>Buscando...</Text>
+              </View>
+            )}
+            {!isSearching &&
+              results.tracks.length === 0 &&
               results.artists.length === 0 &&
               results.albums.length === 0 &&
               results.playlists.length === 0 && (
