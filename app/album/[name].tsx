@@ -217,46 +217,42 @@ export default function AlbumScreen() {
 
   // ── Offline Sync ──
   async function handleLongPress() {
-    if (Platform.OS === 'web') return;
-
     if (synced) {
-      // Already synced — ask to remove
-      if (Platform.OS === 'web') {
-        if (window.confirm(t('album.syncRemove'))) {
-          await removeOfflineAlbum(tracks);
-          setSynced(false);
-        }
-      } else {
-        Alert.alert(t('album.synced'), t('album.syncRemove'), [
-          { text: t('album.cancel'), style: 'cancel' },
-          {
-            text: t('album.delete'),
-            style: 'destructive',
-            onPress: async () => {
-              await removeOfflineAlbum(tracks);
-              setSynced(false);
-            },
+      Alert.alert(t('album.synced'), t('album.syncRemove'), [
+        { text: t('album.cancel'), style: 'cancel' },
+        {
+          text: t('album.delete'),
+          style: 'destructive',
+          onPress: async () => {
+            await removeOfflineAlbum(tracks);
+            setSynced(false);
           },
-        ]);
-      }
+        },
+      ]);
       return;
     }
 
-    setIsSyncing(true);
-    setSyncProgress({ done: 0, total: tracks.length });
-    try {
-      await downloadAlbum(tracks, (done, total) => {
-        setSyncProgress({ done, total });
-      });
-      setSynced(true);
-      if (Platform.OS !== 'web') {
-        Alert.alert(t('album.syncComplete'));
-      }
-    } catch (e) {
-      console.error('Error syncing album:', e);
-    } finally {
-      setIsSyncing(false);
-    }
+    Alert.alert(t('album.syncStart'), `${tracks.length} ${t('library.tracks')}`, [
+      { text: t('album.cancel'), style: 'cancel' },
+      {
+        text: 'OK',
+        onPress: async () => {
+          setIsSyncing(true);
+          setSyncProgress({ done: 0, total: tracks.length });
+          try {
+            await downloadAlbum(tracks, (done, total) => {
+              setSyncProgress({ done, total });
+            });
+            setSynced(true);
+            Alert.alert(t('album.syncComplete'));
+          } catch (e) {
+            console.error('Error syncing album:', e);
+          } finally {
+            setIsSyncing(false);
+          }
+        },
+      },
+    ]);
   }
 
   // ── Render ──
@@ -347,6 +343,21 @@ export default function AlbumScreen() {
                 <TouchableOpacity onPress={handleShare}>
                   <Ionicons name="share-outline" size={24} color={Colors.textSecondary} />
                 </TouchableOpacity>
+
+                {/* Offline sync button */}
+                {Platform.OS !== 'web' && (
+                  <TouchableOpacity onPress={handleLongPress} disabled={isSyncing}>
+                    {isSyncing ? (
+                      <ActivityIndicator size={22} color={Colors.primary} />
+                    ) : (
+                      <Ionicons
+                        name={synced ? 'cloud-done' : 'cloud-download-outline'}
+                        size={24}
+                        color={synced ? Colors.primary : Colors.textSecondary}
+                      />
+                    )}
+                  </TouchableOpacity>
+                )}
 
                 {isOwner && (
                   <TouchableOpacity onPress={openEditModal}>
