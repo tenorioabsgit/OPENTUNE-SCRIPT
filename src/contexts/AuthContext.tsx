@@ -21,9 +21,9 @@ WebBrowser.maybeCompleteAuthSession();
 // Google OAuth Configuration
 // ============================================================
 const GOOGLE_WEB_CLIENT_ID = '215760117220-ao69jilb4mkp6ehu1dtdqb10tuvgiqs7.apps.googleusercontent.com';
-// Our own HTTPS redirect page hosted on Vercel - extracts tokens and redirects to app scheme
-const GOOGLE_REDIRECT_URI = 'https://spotfly-nine.vercel.app/auth/callback.html';
-// The app deep link that the redirect page will navigate to
+// Our own HTTPS redirect page hosted on Vercel (custom domain)
+const GOOGLE_REDIRECT_URI = 'https://www.spotfly.sbs/auth/callback.html';
+// The app deep link that the redirect page will navigate to (mobile only)
 const APP_RETURN_URI = 'spotfly://auth';
 
 interface AuthContextType {
