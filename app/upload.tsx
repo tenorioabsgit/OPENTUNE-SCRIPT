@@ -8,9 +8,10 @@ import {
   Alert,
   SafeAreaView,
   TextInput,
-  Modal,
   ActivityIndicator,
   Image,
+  ScrollView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,19 +27,37 @@ import { usePlayer } from '../src/contexts/PlayerContext';
 import { useAuth } from '../src/contexts/AuthContext';
 import TrackRow from '../src/components/TrackRow';
 
+interface PendingFile {
+  uri: string;
+  name: string;
+  title: string;
+}
+
+function showAlert(title: string, message: string) {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
+
 export default function UploadScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { playTrack } = usePlayer();
   const [uploadedTracks, setUploadedTracks] = useState<Track[]>([]);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editTrack, setEditTrack] = useState<Partial<Track>>({});
-  const [pendingUri, setPendingUri] = useState('');
-  const [pendingName, setPendingName] = useState('');
+  const [isLoadingTracks, setIsLoadingTracks] = useState(true);
+
+  // Batch upload state
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [albumArtist, setAlbumArtist] = useState('');
+  const [albumName, setAlbumName] = useState('');
+  const [albumGenre, setAlbumGenre] = useState('');
+  const [coverUri, setCoverUri] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [isLoadingTracks, setIsLoadingTracks] = useState(true);
-  const [coverUri, setCoverUri] = useState('');
+  const [uploadingIndex, setUploadingIndex] = useState(0);
+  const [totalToUpload, setTotalToUpload] = useState(0);
 
   useEffect(() => {
     loadUploadedTracks();
@@ -59,31 +78,36 @@ export default function UploadScreen() {
     }
   }
 
-  async function pickFile() {
+  async function pickFiles() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['audio/*'],
         copyToCacheDirectory: true,
-        multiple: false,
+        multiple: true,
       });
 
       if (result.canceled) return;
 
-      const file = result.assets[0];
-      const fileName = file.name.replace(/\.[^/.]+$/, '');
+      const newFiles: PendingFile[] = result.assets.map((file) => ({
+        uri: file.uri,
+        name: file.name,
+        title: file.name.replace(/\.[^/.]+$/, ''),
+      }));
 
-      setPendingUri(file.uri);
-      setPendingName(file.name);
-      setEditTrack({
-        title: fileName,
-        artist: user?.displayName || 'Artista Desconhecido',
-        album: 'Meus Uploads',
-        genre: 'Outro',
-      });
-      setShowEditModal(true);
+      setPendingFiles((prev) => [...prev, ...newFiles]);
+
+      if (!albumArtist) {
+        setAlbumArtist(user?.displayName || '');
+      }
+      if (!albumName) {
+        setAlbumName('Meus Uploads');
+      }
+      if (!albumGenre) {
+        setAlbumGenre('Outro');
+      }
     } catch (e) {
-      console.error('Error picking file:', e);
-      Alert.alert('Erro', 'Não foi possível selecionar o arquivo');
+      console.error('Error picking files:', e);
+      showAlert('Erro', 'Não foi possível selecionar os arquivos');
     }
   }
 
@@ -103,30 +127,35 @@ export default function UploadScreen() {
     }
   }
 
-  async function saveUploadedTrack() {
-    if (!editTrack.title?.trim()) {
-      Alert.alert('Erro', 'Digite um título para a música');
+  function removeFile(index: number) {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function updateFileTitle(index: number, title: string) {
+    setPendingFiles((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, title } : f))
+    );
+  }
+
+  async function uploadAll() {
+    if (pendingFiles.length === 0) {
+      showAlert('Erro', 'Selecione pelo menos uma música');
+      return;
+    }
+    if (!albumArtist.trim()) {
+      showAlert('Erro', 'Digite o nome do artista/banda');
       return;
     }
     if (!user) return;
 
     setIsUploading(true);
     setUploadProgress(0);
+    setUploadingIndex(0);
+    setTotalToUpload(pendingFiles.length);
 
     try {
-      // Upload file to Firebase Storage
-      const audioUrl = await uploadMusicFile(
-        user.id,
-        pendingUri,
-        pendingName,
-        (progress: UploadProgress) => {
-          setUploadProgress(Math.round(progress.progress * 100));
-        }
-      );
-
-      // Upload cover image if selected
-      const trackId = 'upload-' + Date.now();
-      let artworkUrl = `https://picsum.photos/seed/${trackId}/300/300`;
+      // Upload cover once (shared for all tracks)
+      let artworkUrl = '';
       if (coverUri) {
         try {
           artworkUrl = await uploadPlaylistCover(user.id, coverUri);
@@ -135,55 +164,86 @@ export default function UploadScreen() {
         }
       }
 
-      const newTrack: Track = {
-        id: trackId,
-        title: editTrack.title?.trim() || pendingName,
-        artist: editTrack.artist?.trim() || 'Artista Desconhecido',
-        album: editTrack.album?.trim() || 'Meus Uploads',
-        duration: 0,
-        artwork: artworkUrl,
-        audioUrl,
-        isLocal: false,
-        genre: editTrack.genre || 'Outro',
-        license: 'Copyleft - Livre para compartilhar',
-        addedAt: Date.now(),
-      };
+      const uploaded: Track[] = [];
 
-      // Save metadata to Firestore (visible to all users)
-      await saveTrackMetadata({
-        ...newTrack,
-        // @ts-ignore - extra field for Firestore query
-        uploadedBy: user.id,
-        uploadedByName: user.displayName || 'Anônimo',
-        titleLower: newTrack.title.toLowerCase(),
-      } as any);
+      for (let i = 0; i < pendingFiles.length; i++) {
+        const file = pendingFiles[i];
+        setUploadingIndex(i + 1);
+        setUploadProgress(0);
 
-      setUploadedTracks(prev => [newTrack, ...prev]);
+        const audioUrl = await uploadMusicFile(
+          user.id,
+          file.uri,
+          file.name,
+          (progress: UploadProgress) => {
+            setUploadProgress(Math.round(progress.progress * 100));
+          }
+        );
 
-      setShowEditModal(false);
-      setPendingUri('');
-      setPendingName('');
-      setEditTrack({});
+        const trackId = 'upload-' + Date.now() + '-' + i;
+        const finalArtwork = artworkUrl || `https://picsum.photos/seed/${trackId}/300/300`;
+
+        const newTrack: Track = {
+          id: trackId,
+          title: file.title.trim() || file.name,
+          artist: albumArtist.trim(),
+          album: albumName.trim() || 'Meus Uploads',
+          duration: 0,
+          artwork: finalArtwork,
+          audioUrl,
+          isLocal: false,
+          genre: albumGenre.trim() || 'Outro',
+          license: 'Copyleft - Livre para compartilhar',
+          addedAt: Date.now(),
+        };
+
+        await saveTrackMetadata({
+          ...newTrack,
+          // @ts-ignore
+          uploadedBy: user.id,
+          uploadedByName: user.displayName || 'Anônimo',
+          titleLower: newTrack.title.toLowerCase(),
+        } as any);
+
+        uploaded.push(newTrack);
+      }
+
+      setUploadedTracks((prev) => [...uploaded, ...prev]);
+
+      // Reset form
+      setPendingFiles([]);
+      setAlbumArtist('');
+      setAlbumName('');
+      setAlbumGenre('');
       setCoverUri('');
 
-      Alert.alert(
-        'Música compartilhada!',
-        `"${newTrack.title}" agora está disponível para toda a comunidade Spotfly!\n\nShare, Build, Share`
-      );
+      const msg = uploaded.length === 1
+        ? `"${uploaded[0].title}" foi compartilhada com a comunidade!`
+        : `${uploaded.length} músicas foram compartilhadas com a comunidade!`;
+      showAlert('Upload concluído!', msg);
     } catch (e) {
       console.error('Upload error:', e);
-      Alert.alert('Erro', 'Não foi possível enviar o arquivo. Tente novamente.');
+      showAlert('Erro', 'Falha no upload. Tente novamente.');
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
+      setUploadingIndex(0);
+      setTotalToUpload(0);
     }
   }
 
   async function deleteTrack(track: Track) {
-    Alert.alert(
-      'Remover música',
-      `Deseja remover "${track.title}"?`,
-      [
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Deseja remover "${track.title}"?`)) {
+        try {
+          await deleteTrackMetadata(track.id);
+          setUploadedTracks((prev) => prev.filter((t) => t.id !== track.id));
+        } catch (e) {
+          showAlert('Erro', 'Não foi possível remover a música.');
+        }
+      }
+    } else {
+      Alert.alert('Remover música', `Deseja remover "${track.title}"?`, [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Remover',
@@ -191,15 +251,14 @@ export default function UploadScreen() {
           onPress: async () => {
             try {
               await deleteTrackMetadata(track.id);
-              setUploadedTracks(prev => prev.filter(t => t.id !== track.id));
+              setUploadedTracks((prev) => prev.filter((t) => t.id !== track.id));
             } catch (e) {
-              console.error('Delete error:', e);
-              Alert.alert('Erro', 'Não foi possível remover a música.');
+              showAlert('Erro', 'Não foi possível remover a música.');
             }
           },
         },
-      ]
-    );
+      ]);
+    }
   }
 
   return (
@@ -213,124 +272,104 @@ export default function UploadScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Upload button area */}
-      <TouchableOpacity
-        style={styles.uploadArea}
-        onPress={pickFile}
-        activeOpacity={0.8}
-        disabled={isUploading}
-      >
-        <LinearGradient
-          colors={[Colors.primary, Colors.primaryDark]}
-          style={styles.uploadGradient}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Upload button area */}
+        <TouchableOpacity
+          style={styles.uploadArea}
+          onPress={pickFiles}
+          activeOpacity={0.8}
+          disabled={isUploading}
         >
-          {isUploading ? (
-            <>
-              <ActivityIndicator size="large" color={Colors.textPrimary} />
-              <Text style={styles.uploadTitle}>Enviando... {uploadProgress}%</Text>
-              <View style={styles.progressBarContainer}>
-                <View style={[styles.progressBar, { width: `${uploadProgress}%` }]} />
+          <LinearGradient
+            colors={[Colors.primary, Colors.primaryDark]}
+            style={styles.uploadGradient}
+          >
+            {isUploading ? (
+              <>
+                <ActivityIndicator size="large" color={Colors.textPrimary} />
+                <Text style={styles.uploadTitle}>
+                  Enviando {uploadingIndex}/{totalToUpload}... {uploadProgress}%
+                </Text>
+                <View style={styles.progressBarContainer}>
+                  <View style={[styles.progressBar, { width: `${uploadProgress}%` }]} />
+                </View>
+              </>
+            ) : (
+              <>
+                <Ionicons name="cloud-upload" size={40} color={Colors.textPrimary} />
+                <Text style={styles.uploadTitle}>
+                  {pendingFiles.length > 0 ? 'Adicionar mais músicas' : 'Selecionar Músicas'}
+                </Text>
+                <Text style={styles.uploadSubtitle}>
+                  MP3, WAV, FLAC, OGG, AAC, M4A
+                </Text>
+                <Text style={[styles.uploadSubtitle, { marginTop: 4, fontSize: 11 }]}>
+                  Selecione várias músicas de uma vez para enviar um disco inteiro
+                </Text>
+              </>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {/* Pending files list + album data */}
+        {pendingFiles.length > 0 && (
+          <View style={styles.formSection}>
+            <Text style={styles.sectionTitle}>
+              Músicas selecionadas ({pendingFiles.length})
+            </Text>
+
+            {pendingFiles.map((file, index) => (
+              <View key={`${file.name}-${index}`} style={styles.fileRow}>
+                <Ionicons name="musical-note" size={20} color={Colors.primary} />
+                <TextInput
+                  style={styles.fileTitleInput}
+                  value={file.title}
+                  onChangeText={(text) => updateFileTitle(index, text)}
+                  placeholder="Título da faixa"
+                  placeholderTextColor={Colors.textInactive}
+                  editable={!isUploading}
+                />
+                {!isUploading && (
+                  <TouchableOpacity onPress={() => removeFile(index)} style={styles.removeButton}>
+                    <Ionicons name="close-circle" size={22} color="#ff5252" />
+                  </TouchableOpacity>
+                )}
               </View>
-            </>
-          ) : (
-            <>
-              <Ionicons name="cloud-upload" size={40} color={Colors.textPrimary} />
-              <Text style={styles.uploadTitle}>Compartilhar Música</Text>
-              <Text style={styles.uploadSubtitle}>
-                MP3, WAV, FLAC, OGG, AAC, M4A
-              </Text>
-              <Text style={[styles.uploadSubtitle, { marginTop: 4, fontSize: 11 }]}>
-                Sua música ficará disponível para toda a comunidade
-              </Text>
-            </>
-          )}
-        </LinearGradient>
-      </TouchableOpacity>
+            ))}
 
-      {/* Uploaded tracks */}
-      <View style={styles.trackListHeader}>
-        <Text style={styles.sectionTitle}>
-          Músicas enviadas ({uploadedTracks.length})
-        </Text>
-      </View>
-
-      {isLoadingTracks ? (
-        <View style={styles.emptyState}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      ) : uploadedTracks.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="musical-notes" size={48} color={Colors.textInactive} />
-          <Text style={styles.emptyText}>Nenhuma música enviada ainda</Text>
-          <Text style={styles.emptySubtext}>
-            Faça upload das suas músicas para ouvir no Spotfly
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={uploadedTracks}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TrackRow
-              track={item}
-              trackList={uploadedTracks}
-              onOptionsPress={(track) => deleteTrack(track)}
-            />
-          )}
-          contentContainerStyle={styles.trackList}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-
-      {/* Edit Modal */}
-      <Modal
-        visible={showEditModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => !isUploading && setShowEditModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Detalhes da Música</Text>
+            {/* Album metadata */}
+            <Text style={[styles.sectionTitle, { marginTop: Layout.padding.lg }]}>
+              Dados do Disco / Banda
+            </Text>
 
             <TextInput
-              style={styles.modalInput}
-              value={editTrack.title}
-              onChangeText={(text) => setEditTrack({ ...editTrack, title: text })}
-              placeholder="Título"
-              placeholderTextColor={Colors.textInactive}
-              autoFocus
-              editable={!isUploading}
-            />
-
-            <TextInput
-              style={styles.modalInput}
-              value={editTrack.artist}
-              onChangeText={(text) => setEditTrack({ ...editTrack, artist: text })}
-              placeholder="Artista"
+              style={styles.input}
+              value={albumArtist}
+              onChangeText={setAlbumArtist}
+              placeholder="Artista / Banda *"
               placeholderTextColor={Colors.textInactive}
               editable={!isUploading}
             />
 
             <TextInput
-              style={styles.modalInput}
-              value={editTrack.album}
-              onChangeText={(text) => setEditTrack({ ...editTrack, album: text })}
-              placeholder="Álbum"
+              style={styles.input}
+              value={albumName}
+              onChangeText={setAlbumName}
+              placeholder="Nome do Álbum"
               placeholderTextColor={Colors.textInactive}
               editable={!isUploading}
             />
 
             <TextInput
-              style={styles.modalInput}
-              value={editTrack.genre}
-              onChangeText={(text) => setEditTrack({ ...editTrack, genre: text })}
+              style={styles.input}
+              value={albumGenre}
+              onChangeText={setAlbumGenre}
               placeholder="Gênero"
               placeholderTextColor={Colors.textInactive}
               editable={!isUploading}
             />
 
-            {/* Cover Image Picker */}
+            {/* Cover Image */}
             <TouchableOpacity
               style={styles.coverPickerButton}
               onPress={pickCoverImage}
@@ -345,51 +384,72 @@ export default function UploadScreen() {
               )}
               <View style={styles.coverPickerInfo}>
                 <Text style={styles.coverPickerText}>
-                  {coverUri ? 'Capa selecionada' : 'Adicionar capa (opcional)'}
+                  {coverUri ? 'Capa selecionada' : 'Capa do disco (opcional)'}
                 </Text>
                 <Text style={styles.coverPickerHint}>Toque para escolher uma imagem</Text>
               </View>
             </TouchableOpacity>
 
-            {/* Copyleft Notice */}
+            {/* Copyleft notice */}
             <View style={styles.copyleftNotice}>
               <Ionicons name="globe-outline" size={16} color={Colors.primary} />
               <Text style={styles.copyleftNoticeText}>
-                Ao enviar, sua música será compartilhada com toda a comunidade sob licença Copyleft.
+                Ao enviar, suas músicas serão compartilhadas com toda a comunidade sob licença Copyleft.
               </Text>
             </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => {
-                  if (isUploading) return;
-                  setShowEditModal(false);
-                  setPendingUri('');
-                  setEditTrack({});
-                }}
-                disabled={isUploading}
-              >
-                <Text style={[styles.modalCancelText, isUploading && { opacity: 0.5 }]}>
-                  Cancelar
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalSaveButton, isUploading && { opacity: 0.7 }]}
-                onPress={saveUploadedTrack}
-                disabled={isUploading}
-              >
-                {isUploading ? (
-                  <ActivityIndicator color={Colors.background} size="small" />
-                ) : (
-                  <Text style={styles.modalSaveText}>Enviar</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            {/* Upload button */}
+            <TouchableOpacity
+              style={[styles.uploadButton, isUploading && { opacity: 0.7 }]}
+              onPress={uploadAll}
+              disabled={isUploading}
+            >
+              {isUploading ? (
+                <ActivityIndicator color={Colors.background} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload" size={20} color={Colors.background} />
+                  <Text style={styles.uploadButtonText}>
+                    Enviar {pendingFiles.length} {pendingFiles.length === 1 ? 'música' : 'músicas'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
+        )}
+
+        {/* Uploaded tracks */}
+        <View style={styles.trackListHeader}>
+          <Text style={styles.sectionTitle}>
+            Músicas enviadas ({uploadedTracks.length})
+          </Text>
         </View>
-      </Modal>
+
+        {isLoadingTracks ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+          </View>
+        ) : uploadedTracks.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="musical-notes" size={48} color={Colors.textInactive} />
+            <Text style={styles.emptyText}>Nenhuma música enviada ainda</Text>
+            <Text style={styles.emptySubtext}>
+              Faça upload das suas músicas para ouvir no Spotfly
+            </Text>
+          </View>
+        ) : (
+          uploadedTracks.map((track) => (
+            <TrackRow
+              key={track.id}
+              track={track}
+              trackList={uploadedTracks}
+              onOptionsPress={(t) => deleteTrack(t)}
+            />
+          ))
+        )}
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -413,6 +473,9 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontSize: 18,
     fontWeight: '700',
+  },
+  scrollContent: {
+    paddingBottom: Layout.padding.xl,
   },
   uploadArea: {
     marginHorizontal: Layout.padding.md,
@@ -448,57 +511,38 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.textPrimary,
     borderRadius: 2,
   },
-  trackListHeader: {
-    paddingHorizontal: Layout.padding.md,
-    paddingTop: Layout.padding.xl,
-    paddingBottom: Layout.padding.sm,
+  formSection: {
+    marginHorizontal: Layout.padding.md,
+    marginTop: Layout.padding.lg,
   },
   sectionTitle: {
     color: Colors.textPrimary,
     fontSize: 18,
     fontWeight: '700',
+    marginBottom: Layout.padding.sm,
   },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
+  fileRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 100,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: Layout.borderRadius.sm,
+    paddingHorizontal: Layout.padding.sm,
+    paddingVertical: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.inactive,
   },
-  emptyText: {
-    color: Colors.textSecondary,
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: Layout.padding.md,
-  },
-  emptySubtext: {
-    color: Colors.textTertiary,
-    fontSize: 13,
-    marginTop: Layout.padding.xs,
-    textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  trackList: {
-    paddingBottom: Layout.padding.xl,
-  },
-  modalOverlay: {
+  fileTitleInput: {
     flex: 1,
-    backgroundColor: Colors.overlay,
-    justifyContent: 'center',
-    padding: Layout.padding.xl,
-  },
-  modalContent: {
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Layout.borderRadius.lg,
-    padding: Layout.padding.lg,
-  },
-  modalTitle: {
     color: Colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: Layout.padding.lg,
+    fontSize: 14,
+    marginLeft: Layout.padding.sm,
+    paddingVertical: 0,
   },
-  modalInput: {
+  removeButton: {
+    padding: 4,
+  },
+  input: {
     backgroundColor: Colors.surfaceLight,
     borderRadius: Layout.borderRadius.sm,
     paddingHorizontal: Layout.padding.md,
@@ -561,36 +605,41 @@ const styles = StyleSheet.create({
     marginLeft: Layout.padding.xs,
     lineHeight: 16,
   },
-  modalButtons: {
+  uploadButton: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: Layout.padding.sm,
-  },
-  modalCancelButton: {
-    flex: 1,
-    paddingVertical: 14,
     alignItems: 'center',
-    marginRight: Layout.padding.sm,
-    borderRadius: Layout.borderRadius.round,
-    borderWidth: 1,
-    borderColor: Colors.inactive,
-  },
-  modalCancelText: {
-    color: Colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  modalSaveButton: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginLeft: Layout.padding.sm,
-    borderRadius: Layout.borderRadius.round,
+    justifyContent: 'center',
     backgroundColor: Colors.primary,
+    borderRadius: Layout.borderRadius.round,
+    paddingVertical: 16,
+    gap: 8,
   },
-  modalSaveText: {
+  uploadButtonText: {
     color: Colors.background,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
+  },
+  trackListHeader: {
+    paddingHorizontal: Layout.padding.md,
+    paddingTop: Layout.padding.xl,
+    paddingBottom: Layout.padding.sm,
+  },
+  emptyState: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: Layout.padding.md,
+  },
+  emptySubtext: {
+    color: Colors.textTertiary,
+    fontSize: 13,
+    marginTop: Layout.padding.xs,
+    textAlign: 'center',
+    paddingHorizontal: 40,
   },
 });
