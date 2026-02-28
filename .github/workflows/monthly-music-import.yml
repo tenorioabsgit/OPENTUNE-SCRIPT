@@ -1,0 +1,53 @@
+name: Monthly Music Import
+
+on:
+  schedule:
+    # Run on the 1st of each month at 00:00 UTC
+    - cron: '0 0 1 * *'
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+jobs:
+  import-music:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Create Firebase credentials file
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > scripts/import-music/serviceAccountKey.json
+
+      - name: Run music import
+        env:
+          JAMENDO_CLIENT_ID: ${{ secrets.JAMENDO_CLIENT_ID }}
+        run: npm run import-music
+
+      - name: Configure git
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+
+      - name: Commit and push changes
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git add -A
+            git commit -m "chore: monthly music import - $(date -u +'%Y-%m-%d')"
+            git push
+          fi
