@@ -1,5 +1,9 @@
 import { initFirebaseAdmin } from './firebaseAdmin';
 import { fetchJamendo } from './sources/jamendo';
+import { fetchBandcamp } from './sources/bandcamp';
+import { fetchMusicBrainz } from './sources/musicbrainz';
+import { fetchCCMixter } from './sources/ccmixter';
+import { fetchDiscogs } from './sources/discogs';
 import { TrackRecord, ImportStats, SourceResult } from './types';
 import { log, validateTrack } from './utils';
 import * as admin from 'firebase-admin';
@@ -10,12 +14,17 @@ async function main() {
   log('main', '=== Spotfly Music Import Starting ===');
   const startTime = Date.now();
 
-  const db = initFirebaseAdmin();
+  // In dry run mode, use null for db to skip Firestore operations
+  const db = process.env.DRY_RUN === '1' ? null : initFirebaseAdmin();
   log('main', 'Firebase Admin initialized');
 
   // Fetch from all sources concurrently (pass db for state persistence)
   const results = await Promise.allSettled([
-    fetchJamendo(db),
+    fetchJamendo(db as any),
+    fetchBandcamp(db as any),
+    fetchMusicBrainz(db as any),
+    fetchCCMixter(db as any),
+    fetchDiscogs(db as any),
   ]);
 
   const allTracks: TrackRecord[] = [];
@@ -69,6 +78,10 @@ async function main() {
   // Update per-source stats
   const sourcePrefixMap: Record<string, string> = {
     jamendo: 'jamendo-',
+    bandcamp: 'bandcamp-',
+    musicbrainz: 'musicbrainz-',
+    ccmixter: 'ccmixter-',
+    discogs: 'discogs-',
   };
   for (const stat of allStats) {
     const prefix = sourcePrefixMap[stat.source] || stat.source;

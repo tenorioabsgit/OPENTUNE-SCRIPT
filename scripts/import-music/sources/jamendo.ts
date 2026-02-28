@@ -1,5 +1,5 @@
 import { TrackRecord, SourceResult } from '../types';
-import { sanitizeTrack, sleep, log, isRockGenre } from '../utils';
+import { sanitizeTrack, sleep, log } from '../utils';
 import * as admin from 'firebase-admin';
 
 const SOURCE = 'jamendo';
@@ -8,11 +8,15 @@ const PAGE_SIZE = 200;
 const PAGES_PER_GENRE = 5; // 1.000 tracks per genre
 const STATE_DOC = 'import-state/jamendo';
 
-// Rock-related genres only
+// All available genres (no filtering)
 const GENRES = [
   'rock', 'metal', 'punk', 'hardrock', 'hardcore',
   'progressive', 'grunge', 'alternative', 'indie',
   'postpunk', 'stonerrock', 'numetal', 'metalcore',
+  'pop', 'hiphop', 'rap', 'electronic', 'edm', 'dance',
+  'jazz', 'blues', 'classical', 'ambient', 'folk',
+  'country', 'reggae', 'soul', 'rnb', 'latin',
+  'afrobeat', 'experimental', 'instrumental',
 ];
 
 // Different sort strategies to reach different parts of the catalog
@@ -109,10 +113,14 @@ export async function fetchJamendo(
         const url =
           `${BASE_URL}?client_id=${clientId}&format=json&limit=${PAGE_SIZE}` +
           `&offset=${offset}&order=${sortOrder}` +
-          `&tags=${genre}&include=musicinfo&audioformat=mp32`;
+          `&include=musicinfo&audioformat=mp32`;
 
         log(SOURCE, `[${genre}] page ${page + 1} (${sortOrder})...`);
-        const response = await fetch(url);
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'OpenTune/1.0 (contact: admin@example.com)',
+          },
+        });
         requestCount++;
 
         if (!response.ok) {
