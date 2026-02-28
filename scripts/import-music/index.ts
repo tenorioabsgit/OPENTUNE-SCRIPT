@@ -1,9 +1,5 @@
 import { initFirebaseAdmin } from './firebaseAdmin';
 import { fetchJamendo } from './sources/jamendo';
-import { fetchBandcamp } from './sources/bandcamp';
-import { fetchMusicBrainz } from './sources/musicbrainz';
-import { fetchCCMixter } from './sources/ccmixter';
-import { fetchDiscogs } from './sources/discogs';
 import { TrackRecord, ImportStats, SourceResult } from './types';
 import { log, validateTrack } from './utils';
 import * as admin from 'firebase-admin';
@@ -21,10 +17,6 @@ async function main() {
   // Fetch from all sources concurrently (pass db for state persistence)
   const results = await Promise.allSettled([
     fetchJamendo(db as any),
-    fetchBandcamp(db as any),
-    fetchMusicBrainz(db as any),
-    fetchCCMixter(db as any),
-    fetchDiscogs(db as any),
   ]);
 
   const allTracks: TrackRecord[] = [];
@@ -78,10 +70,6 @@ async function main() {
   // Update per-source stats
   const sourcePrefixMap: Record<string, string> = {
     jamendo: 'jamendo-',
-    bandcamp: 'bandcamp-',
-    musicbrainz: 'musicbrainz-',
-    ccmixter: 'ccmixter-',
-    discogs: 'discogs-',
   };
   for (const stat of allStats) {
     const prefix = sourcePrefixMap[stat.source] || stat.source;
