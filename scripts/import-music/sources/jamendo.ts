@@ -1,5 +1,5 @@
 import { TrackRecord, SourceResult } from '../types';
-import { sanitizeTrack, sleep, log } from '../utils';
+import { sanitizeTrack, sleep, log, isRockGenre } from '../utils';
 import * as admin from 'firebase-admin';
 
 const SOURCE = 'jamendo';

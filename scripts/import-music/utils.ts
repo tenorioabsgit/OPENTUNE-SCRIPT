@@ -21,16 +21,16 @@ export function sanitizeTrack(
     genre: partial.genre || 'Other',
     license: partial.license || 'Creative Commons',
     uploadedBy: 'system-import',
-    uploadedByName: 'Spotfly Bot',
+    uploadedByName: 'OpenTune Bot',
     titleLower: (partial.title || 'unknown title').toLowerCase(),
   };
 }
 
 export function validateTrack(track: TrackRecord): boolean {
   if (!track.id || track.id.length > 128) return false;
-  if (!track.audioUrl || !track.audioUrl.startsWith('http')) return false;
+  if (!track.audioUrl || (!track.audioUrl.startsWith('http') && !track.audioUrl.startsWith('gs://'))) return false;
   if (!track.title) return false;
-  if (!track.artwork || !track.artwork.startsWith('http')) return false;
+  if (!track.artwork || (!track.artwork.startsWith('http') && !track.artwork.startsWith('gs://'))) return false;
   return true;
 }
 

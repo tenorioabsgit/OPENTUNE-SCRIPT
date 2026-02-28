@@ -1,5 +1,6 @@
-import { initFirebaseAdmin } from './firebaseAdmin';
+import { initFirebaseAdmin, FirebaseServices } from './firebaseAdmin';
 import { fetchJamendo } from './sources/jamendo';
+import { uploadAllTrackAssets } from './storageUploader';
 import { TrackRecord, ImportStats, SourceResult } from './types';
 import { log, validateTrack } from './utils';
 import * as admin from 'firebase-admin';
@@ -7,12 +8,15 @@ import * as admin from 'firebase-admin';
 const BATCH_SIZE = 500;
 
 async function main() {
-  log('main', '=== Spotfly Music Import Starting ===');
+  log('main', '=== OpenTune Music Import Starting ===');
   const startTime = Date.now();
 
-  // In dry run mode, use null for db to skip Firestore operations
-  const db = process.env.DRY_RUN === '1' ? null : initFirebaseAdmin();
-  log('main', 'Firebase Admin initialized');
+  // In dry run mode, use null for services to skip Firebase operations
+  const services: FirebaseServices | null =
+    process.env.DRY_RUN === '1' ? null : initFirebaseAdmin();
+  const db = services?.db ?? null;
+  const bucket = services?.bucket ?? null;
+  log('main', 'Firebase Admin initialized (Firestore + Storage)');
 
   // Fetch from all sources concurrently (pass db for state persistence)
   const results = await Promise.allSettled([
@@ -56,10 +60,9 @@ async function main() {
   log('main', `Total valid tracks fetched: ${allTracks.length}`);
 
   // Deduplicate against Firestore
-  const existingIds = await batchCheckExisting(
-    db,
-    allTracks.map(t => t.id)
-  );
+  const existingIds = db
+    ? await batchCheckExisting(db, allTracks.map(t => t.id))
+    : new Set<string>();
 
   const newTracks = allTracks.filter(t => !existingIds.has(t.id));
   log(
@@ -79,14 +82,22 @@ async function main() {
     stat.skippedDuplicates = sourceTracks.length - sourceNew.length;
   }
 
-  // Write new tracks (or dry run)
+  // Upload audio + artwork to Firebase Storage
+  let tracksToWrite = newTracks;
   if (process.env.DRY_RUN === '1') {
-    log('main', `[DRY RUN] Would write ${newTracks.length} tracks`);
+    log('main', `[DRY RUN] Would upload ${newTracks.length} tracks to Storage`);
     for (const t of newTracks.slice(0, 5)) {
       log('main', `  - ${t.id}: "${t.title}" by ${t.artist} [${t.genre}]`);
     }
-  } else if (newTracks.length > 0) {
-    await batchWriteTracks(db, newTracks);
+  } else if (newTracks.length > 0 && bucket) {
+    tracksToWrite = await uploadAllTrackAssets(bucket, newTracks);
+  }
+
+  // Write tracks to Firestore
+  if (process.env.DRY_RUN === '1') {
+    log('main', `[DRY RUN] Would write ${tracksToWrite.length} tracks to Firestore`);
+  } else if (tracksToWrite.length > 0) {
+    await batchWriteTracks(db, tracksToWrite);
   }
 
   // Summary

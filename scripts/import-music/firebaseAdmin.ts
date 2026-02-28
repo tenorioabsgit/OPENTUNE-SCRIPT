@@ -1,9 +1,16 @@
 import * as admin from 'firebase-admin';
 import * as path from 'path';
 
-export function initFirebaseAdmin(): admin.firestore.Firestore {
+const STORAGE_BUCKET = 'opentune-sbs.firebasestorage.app';
+
+export interface FirebaseServices {
+  db: admin.firestore.Firestore;
+  bucket: admin.storage.Bucket;
+}
+
+export function initFirebaseAdmin(): FirebaseServices {
   if (admin.apps.length > 0) {
-    return admin.firestore();
+    return { db: admin.firestore(), bucket: admin.storage().bucket() };
   }
 
   // In dry run mode, don't require valid credentials
@@ -11,13 +18,16 @@ export function initFirebaseAdmin(): admin.firestore.Firestore {
     try {
       admin.initializeApp({
         credential: admin.credential.applicationDefault(),
-        projectId: 'spotfly-app-test',
+        projectId: 'opentune-sbs',
+        storageBucket: STORAGE_BUCKET,
       });
     } catch {
-      // Firestore in dry mode (no-op)
+      // Firebase in dry mode (no-op)
     }
-    // Return a mock Firestore for dry-run
-    return {} as admin.firestore.Firestore;
+    return {
+      db: {} as admin.firestore.Firestore,
+      bucket: {} as admin.storage.Bucket,
+    };
   }
 
   const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -36,6 +46,7 @@ export function initFirebaseAdmin(): admin.firestore.Firestore {
     const serviceAccount = JSON.parse(serviceAccountJson);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
+      storageBucket: STORAGE_BUCKET,
     });
   } else {
     const serviceAccount = require(
@@ -43,8 +54,9 @@ export function initFirebaseAdmin(): admin.firestore.Firestore {
     );
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
+      storageBucket: STORAGE_BUCKET,
     });
   }
 
-  return admin.firestore();
+  return { db: admin.firestore(), bucket: admin.storage().bucket() };
 }

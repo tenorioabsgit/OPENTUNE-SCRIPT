@@ -1,8 +1,8 @@
 {
-  "name": "spotfly-script",
+  "name": "opentune-script",
   "version": "1.0.0",
   "private": true,
-  "description": "Automated copyleft music importer for Spotfly",
+  "description": "Automated copyleft music importer for OpenTune",
   "scripts": {
     "import-music": "npx tsx scripts/import-music/index.ts",
     "import-music:dry-run": "DRY_RUN=1 npx tsx scripts/import-music/index.ts",
