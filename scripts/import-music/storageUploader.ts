@@ -31,7 +31,7 @@ async function downloadFile(url: string): Promise<Buffer> {
 }
 
 /**
- * Upload a buffer to Firebase Storage and return the gs:// path
+ * Upload a buffer to Firebase Storage and return an HTTPS download URL
  */
 async function uploadToStorage(
   bucket: Bucket,
@@ -39,17 +39,23 @@ async function uploadToStorage(
   data: Buffer,
   contentType: string
 ): Promise<string> {
+  const crypto = require('crypto');
+  const downloadToken = crypto.randomUUID();
   const file = bucket.file(storagePath);
   await file.save(data, {
-    metadata: { contentType },
+    metadata: {
+      contentType,
+      metadata: { firebaseStorageDownloadTokens: downloadToken },
+    },
     resumable: false,
   });
-  return `gs://${bucket.name}/${storagePath}`;
+  const encodedPath = encodeURIComponent(storagePath);
+  return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
 }
 
 /**
  * Download and upload a single file with retries
- * Returns gs:// path on success, or original URL on failure
+ * Returns HTTPS download URL on success, or original URL on failure
  */
 async function downloadAndUpload(
   bucket: Bucket,
@@ -124,7 +130,7 @@ export async function uploadAllTrackAssets(
     for (const track of processed) {
       results.push(track);
       completed++;
-      if (track.audioUrl.startsWith('gs://')) storedCount++;
+      if (track.audioUrl.includes('firebasestorage.googleapis.com')) storedCount++;
     }
 
     if (completed % 20 === 0 || completed === tracks.length) {
