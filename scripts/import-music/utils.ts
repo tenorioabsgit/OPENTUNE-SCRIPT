@@ -26,11 +26,19 @@ export function sanitizeTrack(
   };
 }
 
+/** Returns true if the license URL/string contains a Non-Commercial clause. */
+export function isNonCommercialLicense(license: string): boolean {
+  const lower = license.toLowerCase();
+  return lower.includes('-nc') || lower.includes('/nc') ||
+    lower.includes('non-commercial') || lower.includes('noncommercial');
+}
+
 export function validateTrack(track: TrackRecord): boolean {
   if (!track.id || track.id.length > 128) return false;
   if (!track.audioUrl || (!track.audioUrl.startsWith('http') && !track.audioUrl.startsWith('gs://'))) return false;
   if (!track.title) return false;
   if (!track.artwork || (!track.artwork.startsWith('http') && !track.artwork.startsWith('gs://'))) return false;
+  if (isNonCommercialLicense(track.license)) return false;
   return true;
 }
 
