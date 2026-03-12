@@ -1,5 +1,5 @@
 import { TrackRecord, SourceResult } from '../types';
-import { sanitizeTrack, sleep, log, isRockGenre } from '../utils';
+import { sanitizeTrack, sleep, log, isRockGenre, isSfxTrack } from '../utils';
 import * as admin from 'firebase-admin';
 
 const SOURCE = 'jamendo';
@@ -78,6 +78,7 @@ export async function fetchJamendo(
   const tracks: TrackRecord[] = [];
   const errors: string[] = [];
   const seen = new Set<string>();
+  let sfxSkipped = 0;
 
   // Load state from Firestore
   let state: JamendoState = {
@@ -140,21 +141,22 @@ export async function fetchJamendo(
           if (seen.has(id)) continue;
           seen.add(id);
 
-          tracks.push(
-            sanitizeTrack({
-              id,
-              title: t.name,
-              artist: t.artist_name,
-              artistId: `jamendo-artist-${t.artist_id}`,
-              album: t.album_name || 'Singles',
-              albumId: t.album_id ? `jamendo-album-${t.album_id}` : '',
-              duration: t.duration,
-              artwork: t.album_image || t.image || '',
-              audioUrl: t.audio || t.audiodownload,
-              genre: t.musicinfo?.tags?.genres?.[0] || genre,
-              license: t.license_ccurl || 'Creative Commons',
-            })
-          );
+          const candidate = sanitizeTrack({
+            id,
+            title: t.name,
+            artist: t.artist_name,
+            artistId: `jamendo-artist-${t.artist_id}`,
+            album: t.album_name || 'Singles',
+            albumId: t.album_id ? `jamendo-album-${t.album_id}` : '',
+            duration: t.duration,
+            artwork: t.album_image || t.image || '',
+            audioUrl: t.audio || t.audiodownload,
+            genre: t.musicinfo?.tags?.genres?.[0] || genre,
+            license: t.license_ccurl || 'Creative Commons',
+          });
+
+          if (isSfxTrack(candidate)) { sfxSkipped++; continue; }
+          tracks.push(candidate);
         }
 
         if (data.results.length < PAGE_SIZE) break;
@@ -185,26 +187,27 @@ export async function fetchJamendo(
       for (const t of data.results) {
         if (!t.audio && !t.audiodownload) continue;
         const trackGenre = t.musicinfo?.tags?.genres?.[0] || '';
-        if (!isRockGenre(trackGenre)) continue; // Skip non-rock tracks
+        if (!isRockGenre(trackGenre)) continue;
         const id = `jamendo-${t.id}`;
         if (seen.has(id)) continue;
         seen.add(id);
 
-        tracks.push(
-          sanitizeTrack({
-            id,
-            title: t.name,
-            artist: t.artist_name,
-            artistId: `jamendo-artist-${t.artist_id}`,
-            album: t.album_name || 'Singles',
-            albumId: t.album_id ? `jamendo-album-${t.album_id}` : '',
-            duration: t.duration,
-            artwork: t.album_image || t.image || '',
-            audioUrl: t.audio || t.audiodownload,
-            genre: trackGenre,
-            license: t.license_ccurl || 'Creative Commons',
-          })
-        );
+        const candidate = sanitizeTrack({
+          id,
+          title: t.name,
+          artist: t.artist_name,
+          artistId: `jamendo-artist-${t.artist_id}`,
+          album: t.album_name || 'Singles',
+          albumId: t.album_id ? `jamendo-album-${t.album_id}` : '',
+          duration: t.duration,
+          artwork: t.album_image || t.image || '',
+          audioUrl: t.audio || t.audiodownload,
+          genre: trackGenre,
+          license: t.license_ccurl || 'Creative Commons',
+        });
+
+        if (isSfxTrack(candidate)) { sfxSkipped++; continue; }
+        tracks.push(candidate);
       }
 
       if (data.results.length < PAGE_SIZE) break;
@@ -230,6 +233,6 @@ export async function fetchJamendo(
     }
   }
 
-  log(SOURCE, `Fetched ${tracks.length} unique tracks (${requestCount} API calls, ${errors.length} errors)`);
+  log(SOURCE, `Fetched ${tracks.length} unique tracks (${requestCount} API calls, ${errors.length} errors, ${sfxSkipped} SFX skipped)`);
   return { sourceName: SOURCE, tracks, errors };
 }

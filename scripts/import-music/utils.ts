@@ -39,7 +39,69 @@ export function validateTrack(track: TrackRecord): boolean {
   if (!track.title) return false;
   if (!track.artwork || (!track.artwork.startsWith('http') && !track.artwork.startsWith('gs://'))) return false;
   if (isNonCommercialLicense(track.license)) return false;
+  if (isSfxTrack(track)) return false;
   return true;
+}
+
+// ── SFX / production music detection ────────────────────────────────────────
+
+const SFX_GENRES = new Set([
+  'logo', 'stinger', 'jingle', 'intro', 'trailer',
+  'production', 'loop', 'musicbed', 'kidsquirky', 'corporate',
+]);
+
+const SFX_TITLE_PATTERNS = [
+  /\bsfx\b/i,
+  /\bsound\s*effect/i,
+  /\bsound\s*fx\b/i,
+  /\blogo\b/i,
+  /\bident\b/i,
+  /\bstinger\b/i,
+  /\btrailer\b/i,
+  /\b\d+\s*sec(ond)?s?\b/i,
+  /\bshort\s*(version|edit|mix)\b/i,
+  /\bfoley\b/i,
+  /\bcorporate\b/i,
+  /\badvertising\b/i,
+  /\bcommercial\b/i,
+  /\bbackground\s*(music|piano)?\b/i,
+];
+
+const SFX_ARTIST_PATTERNS = [
+  /\bsound\s*effect/i,
+  /\bsfx\b/i,
+  /\bsound\s*library/i,
+  /\baudio\s*library/i,
+  /\bfree\s*sound/i,
+  /\bzapsplat/i,
+  /\bpixabay/i,
+  /\bsound\s*design/i,
+  /\bfoley\b/i,
+  /\bstock\s*audio/i,
+];
+
+const LIBRARY_ARTISTS = new Set([
+  'megis', 'tina ambient', 'vibedepot', 'waveloom',
+  'zenharmonix', 'zenharmonics', 'muza production',
+]);
+
+export function isSfxTrack(track: TrackRecord): boolean {
+  const genre = (track.genre || '').toLowerCase().replace(/[\s-]/g, '');
+  const artist = (track.artist || '').toLowerCase();
+  const duration = track.duration || 0;
+
+  if (SFX_GENRES.has(genre)) return true;
+  if (LIBRARY_ARTISTS.has(artist)) return true;
+  for (const pat of SFX_ARTIST_PATTERNS) { if (pat.test(artist)) return true; }
+  for (const pat of SFX_TITLE_PATTERNS) { if (pat.test(track.title || '')) return true; }
+  if (duration > 0 && duration <= 15) return true;
+  if (duration > 0 && duration <= 30) {
+    const album = (track.album || '').toLowerCase();
+    if (/\b(loop|bed|background|vlog|reel|tiktok|podcast|corporate)\b/i.test(album)) return true;
+    if (/\b(loop|bed|background|vlog|reel|tiktok|podcast|corporate)\b/i.test(track.title || '')) return true;
+  }
+
+  return false;
 }
 
 const ROCK_GENRES = new Set([
